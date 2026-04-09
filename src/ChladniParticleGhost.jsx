@@ -765,12 +765,44 @@ export default function ChladniParticleGhost() {
         .indicator-btn.active:hover { color: var(--accent); background: rgba(200,192,168,0.06); }
         #status { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); margin-top: 14px; min-height: 18px; }
 
-        /* Mobile: full-width controls, labels stacked on top of sliders so
-           the slider track and thumb can breathe. */
+        /* Mobile: canvas fills the full viewport width (staying square), and
+           the controls live in their own card below that scrolls with the
+           page. Labels stack on top of sliders so the thumb can breathe. */
         @media (max-width: 640px) {
-          .chladni-root { max-width: none; }
-          #canvas-area { padding: 10px; }
-          #controls { padding: 0 16px 18px; }
+          html, body, #root { height: auto; min-height: 100%; }
+          .chladni-root {
+            max-width: none;
+            height: auto;
+            min-height: 100dvh;
+          }
+          #canvas-area {
+            flex: 0 0 auto;
+            padding: 0;
+            width: 100vw;
+            aspect-ratio: 1 / 1;
+            overflow: visible;
+          }
+          #canvas-wrap {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            border-radius: 0;
+            border: none;
+            aspect-ratio: 1 / 1;
+          }
+          #controls {
+            flex: 1 1 auto;
+            padding: 22px 20px 28px;
+            margin-top: -14px;
+            background: var(--surface);
+            border-top-left-radius: var(--radius-lg);
+            border-top-right-radius: var(--radius-lg);
+            border-top: 0.5px solid var(--border);
+            position: relative;
+            z-index: 1;
+          }
+          .section:first-child { padding-top: 4px; }
           .section { padding: 18px 0; }
           .ctrl {
             display: grid;
