@@ -11,7 +11,7 @@ const Page = styled.div`
 `;
 
 function App() {
-  return <Page>Hello from Mosaic!</Page>;
+  return <Page>Hello from Mosaic 123!</Page>;
 }
 
 export default App;
