@@ -100,7 +100,7 @@ export default function ChladniParticleGhost() {
     cameraMode: false, cameraStream: null,
     facingMode: 'environment',
     captured: false,
-    micMode: false, micMuted: false, analyser: null, audioStream: null, audioCtx: null,
+    micMode: false, analyser: null, audioStream: null, audioCtx: null,
     audioLevel: 0, micSensitivity: 3.0,
     micMod: Object.fromEntries(Object.keys(MOD_RANGE).map(k => [k, false])),
     ...INITIAL,
@@ -109,7 +109,6 @@ export default function ChladniParticleGhost() {
   // React state only for UI that affects render
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMicActive,    setIsMicActive]    = useState(false);
-  const [isMicMuted,     setIsMicMuted]     = useState(false);
   const [micModParams,   setMicModParams]   = useState(new Set());
   const [facingMode,     setFacingMode]     = useState('environment');
   const [isCaptured,     setIsCaptured]     = useState(false);
@@ -488,14 +487,6 @@ export default function ChladniParticleGhost() {
     if (s.current.micMode) stopMic();
   }, [stopCamera, stopMic]);
 
-  const toggleMicMute = useCallback(() => {
-    const st = s.current;
-    const newMuted = !st.micMuted;
-    st.micMuted = newMuted;
-    if (st.audioStream) st.audioStream.getAudioTracks().forEach(t => { t.enabled = !newMuted; });
-    setIsMicMuted(newMuted);
-  }, []);
-
   const toggleMicParam = useCallback((key) => {
     s.current.micMod[key] = !s.current.micMod[key];
     setMicModParams(prev => {
@@ -644,43 +635,19 @@ export default function ChladniParticleGhost() {
           </AnimatePresence>
 
           <button
-            className={'icon-btn mic-toggle' + (isMicMuted ? ' muted' : '')}
-            onClick={toggleMicMute}
-            title={isMicMuted ? 'Unmute mic' : 'Mute mic'}
-            aria-label={isMicMuted ? 'Unmute mic' : 'Mute mic'}
+            className={'icon-btn mic-toggle' + (waveModActive ? ' active' : '')}
+            disabled={!isMicActive}
+            onClick={toggleWaveMod}
+            title="Modulate wave params with mic"
+            aria-label="Modulate wave params with mic"
           >
-            {isMicMuted ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 11a7 7 0 0 0 14 0" />
-                <line x1="12" y1="18" x2="12" y2="22" />
-                <line x1="3" y1="3" x2="21" y2="21" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 11a7 7 0 0 0 14 0" />
-                <line x1="12" y1="18" x2="12" y2="22" />
-              </svg>
-            )}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="2" width="6" height="12" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+            </svg>
           </button>
         </div>
-      </div>
-
-      <div className="wave-mod-row">
-        <button
-          className={'mic-mod-btn' + (waveModActive ? ' active' : '')}
-          disabled={!isMicActive || isMicMuted}
-          onClick={toggleWaveMod}
-          title="Modulate all wave params with mic input"
-        >
-          <svg width="12" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0" />
-            <line x1="12" y1="18" x2="12" y2="22" />
-          </svg>
-          mic mod
-        </button>
       </div>
     </>
   );
@@ -855,8 +822,9 @@ export default function ChladniParticleGhost() {
         .icon-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent); }
         .icon-btn svg   { flex-shrink: 0; }
         .mic-toggle { background: transparent; }
-        .mic-toggle:hover { background: rgba(255,255,255,0.06); }
-        .mic-toggle.muted { color: var(--text-tertiary); }
+        .mic-toggle:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+        .mic-toggle.active { color: var(--accent); }
+        .mic-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
 
         /* Indicators row — camera indicator only, aligned under capture button */
         .indicators-row { display: flex; gap: 8px; width: 100%; }
