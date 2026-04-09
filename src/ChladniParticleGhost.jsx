@@ -55,6 +55,14 @@ export default function ChladniParticleGhost() {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
+  // Lock background scroll while sheet is open
+  useEffect(() => {
+    if (sheetOpen) {
+      document.body.classList.add('sheet-locked');
+      return () => document.body.classList.remove('sheet-locked');
+    }
+  }, [sheetOpen]);
+
   const setDisp = useCallback((id, text) => {
     if (dispRefs.current[id]) dispRefs.current[id].textContent = text;
   }, []);
@@ -546,6 +554,7 @@ export default function ChladniParticleGhost() {
           position: relative; border-radius: var(--radius-lg); overflow: hidden;
           background: #000; display: none;
           width: 100%; max-width: 600px; aspect-ratio: 1 / 1;
+          transition: max-width .35s cubic-bezier(.2,.8,.2,1);
         }
         #canvas-wrap.visible { display: block; }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
@@ -631,9 +640,15 @@ export default function ChladniParticleGhost() {
             grid-template-columns: 1fr;
             grid-template-rows: auto 1fr;
             min-height: 100vh;
+            transition: grid-template-rows .35s cubic-bezier(.2,.8,.2,1);
           }
           .chladni-root header { grid-column: 1; padding: 16px 20px; }
-          #canvas-area { padding: 16px 16px 96px; min-height: 200px; }
+          #canvas-area {
+            padding: 16px 16px 96px;
+            min-height: 200px;
+            transition: padding .35s cubic-bezier(.2,.8,.2,1),
+                        max-height .35s cubic-bezier(.2,.8,.2,1);
+          }
           .ctrl label { width: 108px; font-size: 12px; }
           .ctrl .val  { width: 42px; }
           .dz-options-row { flex-direction: column; }
@@ -641,7 +656,21 @@ export default function ChladniParticleGhost() {
             width: 100%; height: 1px;
             margin: 4px 0;
           }
+          /* When the mobile sheet is open, shrink the canvas area so the
+             image remains visible above the sheet (sheet = 2/3, canvas = 1/3). */
+          .chladni-root.sheet-open #canvas-area {
+            padding: 8px 16px;
+            max-height: calc(33vh - 8px);
+          }
+          .chladni-root.sheet-open #canvas-wrap {
+            max-width: calc(33vh - 32px);
+          }
+          .chladni-root.sheet-open header {
+            padding: 8px 20px;
+          }
         }
+        /* Lock background scroll while sheet is open */
+        body.sheet-locked { overflow: hidden; touch-action: none; }
 
         /* Mobile controls sheet */
         .sheet-fab {
@@ -676,7 +705,8 @@ export default function ChladniParticleGhost() {
         }
         .mobile-sheet {
           position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-          max-height: 82vh;
+          height: 66.666vh;
+          max-height: 66.666vh;
           background: var(--bg-primary, #0c0c0c);
           border-top: 0.5px solid var(--border-strong);
           border-top-left-radius: 20px;
@@ -698,7 +728,10 @@ export default function ChladniParticleGhost() {
           background: rgba(255,255,255,0.28);
         }
         .sheet-body {
+          flex: 1;
+          min-height: 0;
           overflow-y: auto;
+          overscroll-behavior: contain;
           -webkit-overflow-scrolling: touch;
           padding: 4px 20px 32px;
           touch-action: pan-y;
@@ -708,7 +741,7 @@ export default function ChladniParticleGhost() {
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
 
-      <div className="chladni-root">
+      <div className={`chladni-root${sheetOpen ? ' sheet-open' : ''}`}>
         <header>
           <h1>chladni_particle_ghost</h1>
           <span>image → particles → standing wave</span>
