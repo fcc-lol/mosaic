@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 
 const INITIAL = {
-  m: 3, n: 4, set: 0.8,
+  m: 3, n: 4, conv: 0.8, sprd: 0.8,
 };
 
 // All rendering happens on a square canvas at this pixel size.
@@ -16,8 +16,72 @@ const PARTOP  = 1.0;
 
 // Maximum amount each param can swing upward when audio is at full level
 const MOD_RANGE = {
-  m: 7, n: 6, set: 0.4,
+  m: 7, n: 6, conv: 0.4, sprd: 0.4,
 };
+
+// ── value arrays for matrix controllers ──────────────────────────────────
+const M_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
+const N_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
+const SETTLE_VALUES = Array.from({ length: 21 }, (_, i) => +(i / 20).toFixed(2));
+
+// ── MatrixController ──────────────────────────────────────────────────────
+function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
+  const cols = xValues.length;
+  const rows = yValues.length;
+  const CELL = 20, PAD = 6;
+  const vw   = cols * CELL + PAD * 2;
+  const vh   = rows * CELL + PAD * 2;
+  const selX = Math.max(0, xValues.findIndex(v => Math.abs(v - xVal) < 1e-9));
+  const selY = Math.max(0, yValues.findIndex(v => Math.abs(v - yVal) < 1e-9));
+  const sig  = (Math.max(cols, rows) - 1) * 0.35;
+
+  const coordsToCell = (el, clientX, clientY) => {
+    const rect = el.getBoundingClientRect();
+    const sx = (clientX - rect.left) * vw / rect.width - PAD;
+    const sy = (clientY - rect.top) * vh / rect.height - PAD;
+    return [
+      Math.max(0, Math.min(cols - 1, Math.floor(sx / CELL))),
+      Math.max(0, Math.min(rows - 1, Math.floor(sy / CELL))),
+    ];
+  };
+
+  const fireSelect = (el, clientX, clientY) => {
+    const [xi, yi] = coordsToCell(el, clientX, clientY);
+    onSelect(xValues[xi], yValues[yi]);
+  };
+
+  const dots = [];
+  for (let yi = 0; yi < rows; yi++) {
+    for (let xi = 0; xi < cols; xi++) {
+      const dx = xi - selX, dy = yi - selY;
+      const t  = Math.exp(-(dx * dx + dy * dy) / (2 * sig * sig));
+      dots.push(
+        <circle
+          key={`${xi},${yi}`}
+          cx={PAD + xi * CELL + CELL / 2}
+          cy={PAD + yi * CELL + CELL / 2}
+          r={1.5 + 4.5 * t}
+          fill="white"
+          fillOpacity={0.1 + 0.9 * t}
+        />
+      );
+    }
+  }
+
+  return (
+    <svg
+      className="matrix-svg"
+      viewBox={`0 0 ${vw} ${vh}`}
+      width="100%"
+      onClick={e => fireSelect(e.currentTarget, e.clientX, e.clientY)}
+      onMouseMove={e => { if (e.buttons) fireSelect(e.currentTarget, e.clientX, e.clientY); }}
+      onTouchStart={e => { e.preventDefault(); const t = e.touches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
+      onTouchMove={e => { e.preventDefault(); const t = e.touches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
+    >
+      {dots}
+    </svg>
+  );
+}
 
 export default function ChladniParticleGhost() {
   const ptCanvasRef      = useRef(null);
@@ -48,6 +112,11 @@ export default function ChladniParticleGhost() {
   const [micModParams,   setMicModParams]   = useState(new Set());
   const [facingMode,     setFacingMode]     = useState('environment');
   const [isCaptured,     setIsCaptured]     = useState(false);
+  const [mVal,           setMVal]           = useState(INITIAL.m);
+  const [nVal,           setNVal]           = useState(INITIAL.n);
+  const [convVal,        setConvVal]        = useState(INITIAL.conv);
+  const [sprdVal,        setSprdVal]        = useState(INITIAL.sprd);
+  const [waveModActive,  setWaveModActive]  = useState(false);
   const dispRefs = useRef({});
 
   const setDisp = useCallback((id, text) => {
@@ -129,13 +198,8 @@ export default function ChladniParticleGhost() {
 
     const { dsW: W, dsH: H, particles } = st;
     const m = p('m'), n = p('n');
-    const set = Math.max(0, Math.min(1, p('set')));
-    // Single "settle" slider drives two things at once:
-    //   conv   — how far each grain lerps toward its snapped nodal target
-    //   spread — pixels of band half-width, applied both perpendicular and
-    //            tangentially to the node via each grain's stable jitter values
-    const conv   = set;
-    const spread = 4 + set * 24;
+    const conv   = Math.max(0, Math.min(1, p('conv')));
+    const spread = 4 + Math.max(0, Math.min(1, p('sprd'))) * 24;
 
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (!ptX) return;
@@ -433,6 +497,14 @@ export default function ChladniParticleGhost() {
     });
   }, []);
 
+  const toggleWaveMod = useCallback(() => {
+    setWaveModActive(prev => {
+      const next = !prev;
+      ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = next; });
+      return next;
+    });
+  }, []);
+
   // ── cleanup on unmount ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -570,9 +642,33 @@ export default function ChladniParticleGhost() {
       {/* Wave */}
       <div className="section">
         <div className="section-title">Wave</div>
-        <Slider id="m"    label="Mode m"        min={1} max={10} step={1}    def={INITIAL.m}    fmt={v => v}               modKey="m" />
-        <Slider id="n"    label="Mode n"        min={1} max={10} step={1}    def={INITIAL.n}    fmt={v => v}               modKey="n" />
-        <Slider id="set"  label="Settle"        min={0} max={1}  step={0.01} def={INITIAL.set}  fmt={v => (+v).toFixed(2)} modKey="set" />
+        <div className="matrices-row">
+          <MatrixController
+            xValues={M_VALUES} yValues={N_VALUES}
+            xVal={mVal} yVal={nVal}
+            onSelect={(m, n) => { s.current.m = m; s.current.n = n; setMVal(m); setNVal(n); }}
+          />
+          <MatrixController
+            xValues={SETTLE_VALUES} yValues={SETTLE_VALUES}
+            xVal={sprdVal} yVal={convVal}
+            onSelect={(sprd, conv) => { s.current.sprd = sprd; s.current.conv = conv; setSprdVal(sprd); setConvVal(conv); }}
+          />
+        </div>
+        <div className="wave-mod-row">
+          <button
+            className={'mic-mod-btn' + (waveModActive ? ' active' : '')}
+            disabled={!isMicActive}
+            onClick={toggleWaveMod}
+            title="Modulate all wave params with mic input"
+          >
+            <svg width="12" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="12" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+            </svg>
+            mic mod
+          </button>
+        </div>
       </div>
 
       <div id="status" ref={statusRef} />
@@ -849,6 +945,32 @@ export default function ChladniParticleGhost() {
           }
           .ctrl .mod-wrap { grid-area: mod; font-size: 0; }
         }
+        /* Matrix controllers */
+        .matrices-row { display: flex; gap: 14px; margin-bottom: 14px; }
+        .matrix-svg {
+          display: block; border-radius: 10px;
+          background: rgba(255,255,255,0.04);
+          border: 0.5px solid rgba(255,255,255,0.08);
+          cursor: crosshair;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: none;
+        }
+        .wave-mod-row { display: flex; }
+        .mic-mod-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+          color: var(--text-tertiary);
+          background: transparent;
+          border: 1px solid var(--border-strong);
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          transition: color .15s, border-color .15s;
+        }
+        .mic-mod-btn:hover:not(:disabled) { color: var(--text-secondary); }
+        .mic-mod-btn.active { color: var(--accent); border-color: rgba(200,192,168,0.35); }
+        .mic-mod-btn:disabled { opacity: 0.4; cursor: not-allowed; }
       `}</style>
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
