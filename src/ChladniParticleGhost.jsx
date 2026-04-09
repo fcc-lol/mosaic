@@ -11,10 +11,7 @@ const CANVAS_SIZE = 600;
 // Locked particle/render params (no longer user-controllable).
 const GRID    = 5;
 const PS      = 1.4;
-const AMP     = 0.55;
-const SPD     = 0.7;
-const WSCALE  = 2.2;
-const BOOST   = 1.4;
+const BOOST   = 1.8;
 const PARTOP  = 1.0;
 
 // Maximum amount each param can swing upward when audio is at full level
@@ -72,10 +69,12 @@ export default function ChladniParticleGhost() {
             r += srcPixels[i]; g += srcPixels[i + 1]; b += srcPixels[i + 2]; count++;
           }
         const cx = x + GRID / 2, cy = y + GRID / 2;
-        // jitter ∈ [-1, 1] — fixed per-particle spread along the nodal-line normal,
-        // so a band's thickness is stable across frames instead of sparkling.
-        const jitter = Math.random() * 2 - 1;
-        particles.push({ ox: cx, oy: cy, x: cx, y: cy, jitter, r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) });
+        // jitter ∈ [-1, 1] — fixed per-particle spread along the nodal-line normal.
+        // jitter2 ∈ [-1, 1] — independent spread along the nodal-line tangent,
+        // adding randomness in the along-line direction for a more natural scatter.
+        const jitter  = Math.random() * 2 - 1;
+        const jitter2 = Math.random() * 2 - 1;
+        particles.push({ ox: cx, oy: cy, x: cx, y: cy, jitter, jitter2, r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) });
       }
     }
     s.current.particles = particles;
@@ -109,8 +108,6 @@ export default function ChladniParticleGhost() {
 
   const frame = useCallback((ts) => {
     const st = s.current;
-    if (!st.startTime) st.startTime = ts;
-    const t = (ts - st.startTime) / 1000;
 
     // ── audio level ────────────────────────────────────────────────────────
     if (st.micMode && st.analyser && audioDataRef.current) {
@@ -133,13 +130,12 @@ export default function ChladniParticleGhost() {
     const { dsW: W, dsH: H, particles } = st;
     const m = p('m'), n = p('n');
     const set = Math.max(0, Math.min(1, p('set')));
-    // Single "settle" slider drives three things at once:
+    // Single "settle" slider drives two things at once:
     //   conv   — how far each grain lerps toward its snapped nodal target
-    //   spread — pixels of band half-width perpendicular to the node
-    //   wiggle — per-frame random jiggle to make the bands feel like sand
+    //   spread — pixels of band half-width, applied both perpendicular and
+    //            tangentially to the node via each grain's stable jitter values
     const conv   = set;
     const spread = 4 + set * 24;
-    const wiggle = set * 1.6;
 
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (!ptX) return;
@@ -212,17 +208,18 @@ export default function ChladniParticleGhost() {
       const nxg = gx / gLen, nyg = gy / gLen;
       x += nxg * spread * part.jitter * conv;
       y += nyg * spread * part.jitter * conv;
-      // Per-frame random jiggle for sand-like shimmer.
-      if (wiggle > 0) {
-        x += (Math.random() - 0.5) * 2 * wiggle;
-        y += (Math.random() - 0.5) * 2 * wiggle;
-      }
+      // Additional spread along the nodal-line tangent for richer random
+      // displacement within the settle — independent of the normal spread.
+      const txg = -nyg, tyg = nxg;
+      x += txg * spread * 0.4 * part.jitter2 * conv;
+      y += tyg * spread * 0.4 * part.jitter2 * conv;
       part.x = x; part.y = y;
 
-      const wave = Math.sin((x / W) * Math.PI * 2 * WSCALE + t * SPD * Math.PI * 2)
-                 * Math.cos((y / H) * Math.PI * 2 * WSCALE + t * SPD * Math.PI * 1.3 + (x / W) * 2.1);
-      const radius = Math.max(0.2, PS + wave * AMP * 0.5);
-      const alpha  = Math.min(1, 0.55 * PARTOP);
+      // Particles nearer the nodal-line center (|jitter| ≈ 0) render
+      // slightly larger; edge particles are smaller.
+      const centeredness = (1 - Math.abs(part.jitter)) * conv;
+      const radius = Math.max(0.4, PS + centeredness * 0.55);
+      const alpha  = Math.min(1, 0.75 * PARTOP);
       const br = Math.min(255, Math.round(part.r * BOOST));
       const bg = Math.min(255, Math.round(part.g * BOOST));
       const bb = Math.min(255, Math.round(part.b * BOOST));
