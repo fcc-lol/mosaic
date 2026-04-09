@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 
 const INITIAL = {
   m: 3, n: 4, str: 30, thresh: 0.12,
@@ -6,30 +6,45 @@ const INITIAL = {
   imgop: 0.25, desat: 0.6, dark: 0.5, grid: 5,
 };
 
-export default function ChladniParticleGhost() {
-  const bgCanvasRef = useRef(null);
-  const ptCanvasRef = useRef(null);
-  const canvasWrapRef = useRef(null);
-  const dropZoneRef = useRef(null);
-  const statusRef = useRef(null);
+// Maximum amount each param can swing upward when audio is at full level
+const MOD_RANGE = {
+  m: 7, n: 6, str: 50, thresh: 0.28,
+  ps: 2.6, amp: 1.45, spd: 2.3, wscale: 3.8, boost: 1.6, partop: 0.9,
+};
 
-  // All mutable state lives in a single ref so the animation frame always
-  // reads the latest values without needing re-renders.
+export default function ChladniParticleGhost() {
+  const bgCanvasRef   = useRef(null);
+  const ptCanvasRef   = useRef(null);
+  const canvasWrapRef = useRef(null);
+  const dropZoneRef   = useRef(null);
+  const statusRef     = useRef(null);
+  const videoRef      = useRef(null);
+  const cameraTmpRef  = useRef(null);
+  const audioDataRef  = useRef(null); // cached Uint8Array for analyser reads
+
+  // All animation-loop mutable state — never causes re-renders.
   const s = useRef({
     particles: [], dsW: 0, dsH: 0,
     animId: null, startTime: null,
     srcPixels: null, bgImageData: null,
+    cameraMode: false, cameraStream: null,
+    micMode: false, analyser: null, audioStream: null, audioCtx: null,
+    audioLevel: 0, micSensitivity: 1.0,
+    micMod: Object.fromEntries(Object.keys(MOD_RANGE).map(k => [k, false])),
     ...INITIAL,
   });
 
-  // ── display value refs for label spans ──────────────────────────────────
+  // React state only for UI that affects render
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isMicActive,    setIsMicActive]    = useState(false);
+  const [micModParams,   setMicModParams]   = useState(new Set());
   const dispRefs = useRef({});
 
   const setDisp = useCallback((id, text) => {
     if (dispRefs.current[id]) dispRefs.current[id].textContent = text;
   }, []);
 
-  // ── core functions ───────────────────────────────────────────────────────
+  // ── background layer ─────────────────────────────────────────────────────
 
   const drawBg = useCallback(() => {
     const { bgImageData, dsW: W, dsH: H, desat, dark, imgop } = s.current;
@@ -50,6 +65,8 @@ export default function ChladniParticleGhost() {
     bgX.putImageData(out, 0, 0);
   }, []);
 
+  // ── particles ────────────────────────────────────────────────────────────
+
   const sampleParticles = useCallback(() => {
     const { srcPixels, dsW: W, dsH: H, grid } = s.current;
     if (!srcPixels) return;
@@ -69,6 +86,25 @@ export default function ChladniParticleGhost() {
     if (statusRef.current) statusRef.current.textContent = particles.length.toLocaleString() + ' particles';
   }, []);
 
+  // Refresh particle colors in-place from current srcPixels (used in camera mode)
+  const refreshParticleColors = useCallback(() => {
+    const { srcPixels, dsW: W, dsH: H, grid, particles } = s.current;
+    if (!srcPixels) return;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const px = Math.floor(p.ox - grid / 2), py = Math.floor(p.oy - grid / 2);
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let dy = 0; dy < grid && py + dy < H; dy++)
+        for (let dx = 0; dx < grid && px + dx < W; dx++) {
+          const idx = ((py + dy) * W + (px + dx)) * 4;
+          r += srcPixels[idx]; g += srcPixels[idx + 1]; b += srcPixels[idx + 2]; count++;
+        }
+      if (count > 0) { p.r = Math.round(r / count); p.g = Math.round(g / count); p.b = Math.round(b / count); }
+    }
+  }, []);
+
+  // ── animation loop ───────────────────────────────────────────────────────
+
   const chladni = (x, y, m, n, W, H) => {
     const px = x / W, py = y / H;
     return Math.cos(n * Math.PI * px) * Math.cos(m * Math.PI * py)
@@ -79,16 +115,54 @@ export default function ChladniParticleGhost() {
     const st = s.current;
     if (!st.startTime) st.startTime = ts;
     const t = (ts - st.startTime) / 1000;
-    const { m, n, str, thresh, ps, amp, spd, wscale, boost, partop, dsW: W, dsH: H, particles } = st;
+
+    // ── audio level ────────────────────────────────────────────────────────
+    if (st.micMode && st.analyser && audioDataRef.current) {
+      st.analyser.getByteTimeDomainData(audioDataRef.current);
+      let sum = 0;
+      const buf = audioDataRef.current;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] / 128) - 1; sum += v * v; }
+      const rms = Math.sqrt(sum / buf.length) * 4; // scale up for sensitivity
+      st.audioLevel = st.audioLevel * 0.75 + Math.min(1, rms * st.micSensitivity) * 0.25;
+    }
+
+    // ── get effective param values (base + audio modulation) ───────────────
+    const p = (key) => {
+      const base = st[key];
+      return (st.micMode && st.micMod[key])
+        ? Math.min(base + st.audioLevel * MOD_RANGE[key], base + MOD_RANGE[key])
+        : base;
+    };
+
+    const { dsW: W, dsH: H, particles } = st;
+    const m = p('m'), n = p('n'), str = p('str'), thresh = p('thresh');
+    const ps = p('ps'), amp = p('amp'), spd = p('spd'), wscale = p('wscale');
+    const boost = p('boost'), partop = p('partop');
+
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (!ptX) return;
     const gs = 3;
 
+    // ── camera: pull new frame from video ──────────────────────────────────
+    if (st.cameraMode) {
+      const video = videoRef.current;
+      const tmp   = cameraTmpRef.current;
+      if (video && tmp && video.readyState >= 2) {
+        const tmpCtx = tmp.getContext('2d');
+        tmpCtx.drawImage(video, 0, 0, W, H);
+        const imageData = tmpCtx.getImageData(0, 0, W, H);
+        st.srcPixels   = imageData.data;
+        st.bgImageData = imageData;
+        refreshParticleColors();
+        drawBg();
+      }
+    }
+
     ptX.clearRect(0, 0, W, H);
 
     for (let i = 0; i < particles.length; i++) {
-      const p = particles[i];
-      const x = p.ox, y = p.oy;
+      const part = particles[i];
+      const x = part.ox, y = part.oy;
       const z  = chladni(x,      y,      m, n, W, H);
       const zr = chladni(x + gs, y,      m, n, W, H);
       const zl = chladni(x - gs, y,      m, n, W, H);
@@ -106,16 +180,16 @@ export default function ChladniParticleGhost() {
                  * Math.cos((ny / H) * Math.PI * 2 * wscale + t * spd * Math.PI * 1.3 + (nx / W) * 2.1);
       const radius = Math.max(0.2, ps * (0.5 + proximity * 0.5) + wave * amp * proximity);
       const alpha  = (0.45 + proximity * 0.55) * partop;
-      const br = Math.min(255, Math.round(p.r * boost));
-      const bg = Math.min(255, Math.round(p.g * boost));
-      const bb = Math.min(255, Math.round(p.b * boost));
+      const br = Math.min(255, Math.round(part.r * boost));
+      const bg = Math.min(255, Math.round(part.g * boost));
+      const bb = Math.min(255, Math.round(part.b * boost));
       ptX.beginPath();
       ptX.arc(nx, ny, radius, 0, Math.PI * 2);
       ptX.fillStyle = `rgba(${br},${bg},${bb},${alpha.toFixed(2)})`;
       ptX.fill();
     }
     st.animId = requestAnimationFrame(frame);
-  }, []);
+  }, [drawBg, refreshParticleColors]);
 
   const startAnim = useCallback(() => {
     const st = s.current;
@@ -124,6 +198,21 @@ export default function ChladniParticleGhost() {
     st.animId = requestAnimationFrame(frame);
   }, [frame]);
 
+  // ── canvas/source setup ──────────────────────────────────────────────────
+
+  const setupCanvas = useCallback((w, h) => {
+    s.current.dsW = w; s.current.dsH = h;
+    const bgC = bgCanvasRef.current, ptC = ptCanvasRef.current;
+    bgC.width = ptC.width = w;
+    bgC.height = ptC.height = h;
+    const wrap = canvasWrapRef.current;
+    wrap.style.width = w + 'px';
+    wrap.style.height = h + 'px';
+    wrap.style.maxWidth = '100%';
+    wrap.classList.add('visible');
+    if (dropZoneRef.current) dropZoneRef.current.style.display = 'none';
+  }, []);
+
   const loadFile = useCallback((file) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -131,47 +220,117 @@ export default function ChladniParticleGhost() {
       const maxDim = 800;
       let w = img.naturalWidth, h = img.naturalHeight;
       if (w > maxDim || h > maxDim) { const sc = maxDim / Math.max(w, h); w = Math.round(w * sc); h = Math.round(h * sc); }
-      s.current.dsW = w; s.current.dsH = h;
-
-      const bgC = bgCanvasRef.current;
-      const ptC = ptCanvasRef.current;
-      bgC.width = ptC.width = w;
-      bgC.height = ptC.height = h;
-
-      const wrap = canvasWrapRef.current;
-      wrap.style.width  = w + 'px';
-      wrap.style.height = h + 'px';
-      wrap.style.maxWidth = '100%';
-
+      setupCanvas(w, h);
       const tmp = document.createElement('canvas');
       tmp.width = w; tmp.height = h;
       const tCtx = tmp.getContext('2d');
       tCtx.drawImage(img, 0, 0, w, h);
       s.current.srcPixels   = tCtx.getImageData(0, 0, w, h).data;
       s.current.bgImageData = tCtx.getImageData(0, 0, w, h);
-
       URL.revokeObjectURL(url);
-      if (dropZoneRef.current) dropZoneRef.current.style.display = 'none';
-      wrap.classList.add('visible');
-      sampleParticles();
-      drawBg();
-      startAnim();
+      sampleParticles(); drawBg(); startAnim();
     };
     img.src = url;
-  }, [sampleParticles, drawBg, startAnim]);
+  }, [setupCanvas, sampleParticles, drawBg, startAnim]);
 
-  // cleanup on unmount
+  // ── camera ───────────────────────────────────────────────────────────────
+
+  const stopCamera = useCallback(() => {
+    const st = s.current;
+    if (st.cameraStream) { st.cameraStream.getTracks().forEach(t => t.stop()); st.cameraStream = null; }
+    st.cameraMode = false;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    if (dropZoneRef.current) dropZoneRef.current.style.display = '';
+    if (canvasWrapRef.current) canvasWrapRef.current.classList.remove('visible');
+    if (st.animId) { cancelAnimationFrame(st.animId); st.animId = null; }
+    st.particles = []; st.srcPixels = null; st.bgImageData = null;
+    if (statusRef.current) statusRef.current.textContent = '';
+    setIsCameraActive(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
+      s.current.cameraStream = stream;
+      s.current.cameraMode   = true;
+      setIsCameraActive(true);
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        const w = video.videoWidth || 640, h = video.videoHeight || 480;
+        if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
+        cameraTmpRef.current.width = w; cameraTmpRef.current.height = h;
+        setupCanvas(w, h);
+        video.addEventListener('playing', () => {
+          const tmpCtx = cameraTmpRef.current.getContext('2d');
+          tmpCtx.drawImage(video, 0, 0, w, h);
+          const imageData = tmpCtx.getImageData(0, 0, w, h);
+          s.current.srcPixels   = imageData.data;
+          s.current.bgImageData = imageData;
+          sampleParticles(); drawBg(); startAnim();
+        }, { once: true });
+      };
+    } catch {
+      if (statusRef.current) statusRef.current.textContent = 'Camera access denied';
+    }
+  }, [setupCanvas, sampleParticles, drawBg, startAnim]);
+
+  // ── microphone ───────────────────────────────────────────────────────────
+
+  const stopMic = useCallback(() => {
+    const st = s.current;
+    if (st.audioStream) { st.audioStream.getTracks().forEach(t => t.stop()); st.audioStream = null; }
+    if (st.audioCtx)    { st.audioCtx.close(); st.audioCtx = null; }
+    st.analyser = null; st.micMode = false; st.audioLevel = 0;
+    setIsMicActive(false);
+  }, []);
+
+  const startMic = useCallback(async () => {
+    try {
+      const stream  = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const ctx     = new AudioContext();
+      const source  = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioDataRef.current       = new Uint8Array(analyser.frequencyBinCount);
+      s.current.audioStream      = stream;
+      s.current.analyser         = analyser;
+      s.current.audioCtx         = ctx;
+      s.current.micMode          = true;
+      setIsMicActive(true);
+    } catch {
+      if (statusRef.current) statusRef.current.textContent = 'Microphone access denied';
+    }
+  }, []);
+
+  const toggleMicParam = useCallback((key) => {
+    s.current.micMod[key] = !s.current.micMod[key];
+    setMicModParams(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // ── cleanup on unmount ───────────────────────────────────────────────────
+
   useEffect(() => {
+    if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
     return () => {
-      if (s.current.animId) cancelAnimationFrame(s.current.animId);
+      if (s.current.animId)     cancelAnimationFrame(s.current.animId);
+      if (s.current.cameraStream) s.current.cameraStream.getTracks().forEach(t => t.stop());
+      if (s.current.audioStream)  s.current.audioStream.getTracks().forEach(t => t.stop());
+      if (s.current.audioCtx)     s.current.audioCtx.close();
     };
   }, []);
 
-  // ── event handlers ───────────────────────────────────────────────────────
+  // ── slider/event helpers ─────────────────────────────────────────────────
 
-  const handleDrop = (e) => { e.preventDefault(); dropZoneRef.current?.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) loadFile(f); };
-  const handleDragOver = (e) => { e.preventDefault(); dropZoneRef.current?.classList.add('drag'); };
-  const handleDragLeave = () => dropZoneRef.current?.classList.remove('drag');
+  const handleDrop       = (e) => { e.preventDefault(); dropZoneRef.current?.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) loadFile(f); };
+  const handleDragOver   = (e) => { e.preventDefault(); dropZoneRef.current?.classList.add('drag'); };
+  const handleDragLeave  = ()  => dropZoneRef.current?.classList.remove('drag');
   const handleFileChange = (e) => { const f = e.target.files[0]; if (f) loadFile(f); };
 
   const makeSliderHandler = (key, fmt, redraw) => (e) => {
@@ -185,16 +344,15 @@ export default function ChladniParticleGhost() {
   const preset = (mv, nv) => {
     s.current.m = mv; s.current.n = nv;
     setDisp('mv', mv); setDisp('nv', nv);
-    // sync slider DOM values
     document.getElementById('m-slider').value = mv;
     document.getElementById('n-slider').value = nv;
   };
 
-  // ── render ───────────────────────────────────────────────────────────────
-
   const dispRef = (id) => (el) => { dispRefs.current[id] = el; };
 
-  const Slider = ({ id, min, max, step, def, fmt, redraw, label }) => (
+  // ── Slider component ─────────────────────────────────────────────────────
+
+  const Slider = ({ id, min, max, step, def, fmt, redraw, label, modKey }) => (
     <div className="ctrl">
       <label>{label}</label>
       <input
@@ -203,8 +361,17 @@ export default function ChladniParticleGhost() {
         onChange={makeSliderHandler(id, fmt, redraw)}
       />
       <span className="val" ref={dispRef(id + 'v')}>{fmt(def)}</span>
+      {modKey && isMicActive && (
+        <button
+          className={'mod-toggle' + (micModParams.has(modKey) ? ' active' : '')}
+          title="Modulate with mic"
+          onClick={() => toggleMicParam(modKey)}
+        >m</button>
+      )}
     </div>
   );
+
+  // ── render ───────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -212,180 +379,123 @@ export default function ChladniParticleGhost() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
         :root {
-          --bg: #0c0c0c;
-          --surface: #161616;
-          --border: rgba(255,255,255,0.08);
-          --border-strong: rgba(255,255,255,0.15);
-          --text-primary: #e8e6e0;
-          --text-secondary: #888780;
-          --text-tertiary: #4a4845;
+          --bg: #0c0c0c; --surface: #161616;
+          --border: rgba(255,255,255,0.08); --border-strong: rgba(255,255,255,0.15);
+          --text-primary: #e8e6e0; --text-secondary: #888780; --text-tertiary: #4a4845;
           --accent: #c8c0a8;
-          --font-mono: 'DM Mono', 'Fira Mono', monospace;
-          --font-sans: 'DM Sans', system-ui, sans-serif;
-          --radius: 8px;
-          --radius-lg: 12px;
+          --font-mono: 'DM Mono','Fira Mono',monospace;
+          --font-sans: 'DM Sans',system-ui,sans-serif;
+          --radius: 8px; --radius-lg: 12px;
         }
-        html, body, #root {
-          height: 100%;
-          background: var(--bg);
-        }
+        html, body, #root { height: 100%; background: var(--bg); }
         .chladni-root {
-          color: var(--text-primary);
-          font-family: var(--font-sans);
-          font-size: 13px;
-          min-height: 100vh;
-          display: grid;
-          grid-template-columns: 1fr 300px;
-          grid-template-rows: auto 1fr;
+          color: var(--text-primary); font-family: var(--font-sans); font-size: 13px;
+          min-height: 100vh; display: grid;
+          grid-template-columns: 1fr 300px; grid-template-rows: auto 1fr;
           background: var(--bg);
         }
         .chladni-root header {
-          grid-column: 1 / -1;
-          padding: 16px 24px;
+          grid-column: 1 / -1; padding: 16px 24px;
           border-bottom: 0.5px solid var(--border);
-          display: flex;
-          align-items: baseline;
-          gap: 16px;
+          display: flex; align-items: baseline; gap: 16px;
         }
         .chladni-root header h1 {
-          font-family: var(--font-mono);
-          font-size: 13px;
-          font-weight: 400;
-          color: var(--text-secondary);
-          letter-spacing: .08em;
+          font-family: var(--font-mono); font-size: 13px; font-weight: 400;
+          color: var(--text-secondary); letter-spacing: .08em;
         }
-        .chladni-root header span {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          color: var(--text-tertiary);
-        }
+        .chladni-root header span { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
         #canvas-area {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 24px;
-          overflow: hidden;
+          position: relative; display: flex; align-items: center;
+          justify-content: center; padding: 24px; overflow: hidden;
         }
         #drop-zone {
-          position: absolute;
-          inset: 24px;
-          border: 1px dashed var(--border-strong);
-          border-radius: var(--radius-lg);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
+          position: absolute; inset: 24px;
+          border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+          display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 20px; z-index: 2;
           transition: border-color .2s, background .2s;
-          z-index: 2;
         }
-        #drop-zone:hover, #drop-zone.drag {
-          border-color: rgba(255,255,255,0.25);
-          background: rgba(255,255,255,0.02);
-        }
+        #drop-zone:hover { border-color: rgba(255,255,255,0.25); }
+        #drop-zone.drag  { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.02); }
         #drop-zone input { display: none; }
-        #drop-zone .dz-title { font-size: 15px; font-weight: 500; color: var(--text-primary); margin-bottom: 6px; }
-        #drop-zone .dz-sub { font-size: 12px; color: var(--text-secondary); }
+        .dz-options-row  { display: flex; align-items: center; }
+        .dz-option {
+          display: flex; flex-direction: column; align-items: center; gap: 6px;
+          cursor: pointer; padding: 16px 28px; border-radius: var(--radius);
+          transition: background .15s;
+        }
+        .dz-option:hover        { background: rgba(255,255,255,0.04); }
+        .dz-option .dz-title    { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+        .dz-option .dz-sub      { font-size: 11px; color: var(--text-secondary); }
+        .dz-divider             { width: 1px; height: 40px; background: var(--border-strong); }
+        #stop-camera-btn {
+          position: absolute; top: 36px; right: 36px; z-index: 10;
+          font-family: var(--font-mono); font-size: 11px; padding: 4px 12px;
+          background: rgba(12,12,12,0.85); border: 0.5px solid var(--border-strong);
+          border-radius: 4px; color: var(--text-secondary); cursor: pointer;
+          transition: color .15s, border-color .15s;
+        }
+        #stop-camera-btn:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.3); }
         #canvas-wrap {
-          position: relative;
-          border-radius: var(--radius-lg);
-          overflow: hidden;
-          background: #000;
-          display: none;
-          max-width: 100%;
+          position: relative; border-radius: var(--radius-lg); overflow: hidden;
+          background: #000; display: none; max-width: 100%;
         }
         #canvas-wrap.visible { display: block; }
-        #canvas-wrap canvas {
-          position: absolute;
-          top: 0; left: 0;
-          width: 100%; height: 100%;
-          display: block;
-        }
+        #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
         #c-bg { position: relative; }
         #sidebar {
-          border-left: 0.5px solid var(--border);
-          padding: 20px 16px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 0;
+          border-left: 0.5px solid var(--border); padding: 20px 16px;
+          overflow-y: auto; display: flex; flex-direction: column; gap: 0;
         }
-        .section {
-          padding: 14px 0;
-          border-bottom: 0.5px solid var(--border);
-        }
+        .section { padding: 14px 0; border-bottom: 0.5px solid var(--border); }
         .section:last-child { border-bottom: none; }
         .section-title {
-          font-family: var(--font-mono);
-          font-size: 10px;
-          color: var(--text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: .1em;
-          margin-bottom: 10px;
+          font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary);
+          text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px;
         }
-        .ctrl {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin: 8px 0;
-        }
-        .ctrl label {
-          width: 118px;
-          flex-shrink: 0;
-          color: var(--text-secondary);
-          font-size: 12px;
-        }
+        .ctrl { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+        .ctrl label { width: 118px; flex-shrink: 0; color: var(--text-secondary); font-size: 12px; }
         .ctrl input[type=range] {
-          flex: 1;
-          -webkit-appearance: none;
-          height: 2px;
-          background: var(--border-strong);
-          border-radius: 2px;
-          outline: none;
+          flex: 1; -webkit-appearance: none; height: 2px;
+          background: var(--border-strong); border-radius: 2px; outline: none;
         }
         .ctrl input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 12px; height: 12px;
-          border-radius: 50%;
-          background: var(--accent);
-          cursor: pointer;
+          -webkit-appearance: none; width: 12px; height: 12px;
+          border-radius: 50%; background: var(--accent); cursor: pointer;
         }
-        .ctrl .val {
-          width: 40px;
-          text-align: right;
-          font-family: var(--font-mono);
-          font-size: 11px;
-          color: var(--text-primary);
+        .ctrl .val { width: 40px; text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); }
+        .mod-toggle {
+          flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+          font-family: var(--font-mono); font-size: 9px; font-weight: 400;
+          background: transparent; border: 0.5px solid var(--border-strong);
+          border-radius: 3px; color: var(--text-tertiary); cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: background .15s, color .15s, border-color .15s;
         }
-        .presets {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 5px;
-          margin-top: 4px;
-        }
+        .mod-toggle:hover  { color: var(--text-secondary); border-color: rgba(255,255,255,0.25); }
+        .mod-toggle.active { background: var(--accent); border-color: var(--accent); color: #0c0c0c; }
+        .presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
         .presets button {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          padding: 3px 9px;
-          background: transparent;
-          border: 0.5px solid var(--border-strong);
-          border-radius: 4px;
-          color: var(--text-secondary);
-          cursor: pointer;
+          font-family: var(--font-mono); font-size: 11px; padding: 3px 9px;
+          background: transparent; border: 0.5px solid var(--border-strong);
+          border-radius: 4px; color: var(--text-secondary); cursor: pointer;
           transition: background .15s, color .15s;
         }
-        .presets button:hover {
-          background: rgba(255,255,255,0.05);
-          color: var(--text-primary);
+        .presets button:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+        .source-btn {
+          display: flex; align-items: center; gap: 6px; width: 100%;
+          font-family: var(--font-mono); font-size: 11px; padding: 6px 8px;
+          background: transparent; border: 0.5px solid var(--border-strong);
+          border-radius: 4px; color: var(--text-secondary); cursor: pointer;
+          transition: background .15s, color .15s, border-color .15s;
+          margin: 4px 0;
         }
-        #status {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          color: var(--text-tertiary);
-          margin-top: 10px;
-          min-height: 16px;
-        }
+        .source-btn:hover  { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+        .source-btn.active { border-color: var(--accent); color: var(--accent); }
+        .source-btn .dot   { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+        .sensitivity-row   { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .sensitivity-row label { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
+        #status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-top: 10px; min-height: 16px; }
         @media (max-width: 700px) {
           .chladni-root { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
           #sidebar { border-left: none; border-top: 0.5px solid var(--border); }
@@ -393,38 +503,70 @@ export default function ChladniParticleGhost() {
         }
       `}</style>
 
+      <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
+
       <div className="chladni-root">
         <header>
           <h1>chladni_particle_ghost</h1>
           <span>image → particles → standing wave</span>
         </header>
 
-        <div id="canvas-area">
-          <div
-            id="drop-zone"
-            ref={dropZoneRef}
-            onClick={() => document.getElementById('file-input').click()}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
+        <div id="canvas-area" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+          <div id="drop-zone" ref={dropZoneRef}>
             <input type="file" id="file-input" accept="image/*" onChange={handleFileChange} />
-            <div className="dz-title">Drop a photo here</div>
-            <div className="dz-sub">image shows through beneath the particles</div>
+            <div className="dz-options-row">
+              <div className="dz-option" onClick={() => document.getElementById('file-input').click()}>
+                <div className="dz-title">Drop a photo</div>
+                <div className="dz-sub">or click to browse</div>
+              </div>
+              <div className="dz-divider" />
+              <div className="dz-option" onClick={startCamera}>
+                <div className="dz-title">Use Camera</div>
+                <div className="dz-sub">live video feed</div>
+              </div>
+            </div>
           </div>
+
+          {isCameraActive && (
+            <button id="stop-camera-btn" onClick={stopCamera}>stop camera</button>
+          )}
+
           <div id="canvas-wrap" ref={canvasWrapRef}>
-            <canvas id="c-bg" ref={bgCanvasRef} />
-            <canvas id="c-particles" ref={ptCanvasRef} />
+            <canvas id="c-bg"         ref={bgCanvasRef} />
+            <canvas id="c-particles"  ref={ptCanvasRef} />
           </div>
         </div>
 
         <div id="sidebar">
+          {/* Source */}
+          <div className="section">
+            <div className="section-title">Source</div>
+            <button
+              className={'source-btn' + (isMicActive ? ' active' : '')}
+              onClick={isMicActive ? stopMic : startMic}
+            >
+              <span className="dot" />
+              {isMicActive ? 'mic active — click to stop' : 'use microphone'}
+            </button>
+            {isMicActive && (
+              <div className="sensitivity-row">
+                <label>sensitivity</label>
+                <input
+                  type="range" min={0.2} max={4} step={0.1} defaultValue={1}
+                  style={{ flex: 1, WebkitAppearance: 'none', height: '2px', background: 'var(--border-strong)', borderRadius: '2px', outline: 'none' }}
+                  onChange={e => { s.current.micSensitivity = +e.target.value; }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Wave */}
           <div className="section">
             <div className="section-title">Wave</div>
-            <Slider id="m"      label="Mode m"        min={1}    max={10}  step={1}    def={INITIAL.m}      fmt={v => v} />
-            <Slider id="n"      label="Mode n"        min={1}    max={10}  step={1}    def={INITIAL.n}      fmt={v => v} />
-            <Slider id="str"    label="Warp strength" min={0}    max={80}  step={1}    def={INITIAL.str}    fmt={v => v} />
-            <Slider id="thresh" label="Node threshold" min={0.01} max={0.4} step={0.01} def={INITIAL.thresh} fmt={v => (+v).toFixed(2)} />
+            <Slider id="m"      label="Mode m"         min={1}    max={10}  step={1}    def={INITIAL.m}      fmt={v => v}               modKey="m" />
+            <Slider id="n"      label="Mode n"         min={1}    max={10}  step={1}    def={INITIAL.n}      fmt={v => v}               modKey="n" />
+            <Slider id="str"    label="Warp strength"  min={0}    max={80}  step={1}    def={INITIAL.str}    fmt={v => v}               modKey="str" />
+            <Slider id="thresh" label="Node threshold" min={0.01} max={0.4} step={0.01} def={INITIAL.thresh} fmt={v => (+v).toFixed(2)} modKey="thresh" />
             <div className="presets">
               {[[2,3],[3,4],[3,5],[4,5],[5,7],[6,7],[7,9]].map(([mv,nv]) => (
                 <button key={`${mv},${nv}`} onClick={() => preset(mv, nv)}>{mv},{nv}</button>
@@ -432,17 +574,19 @@ export default function ChladniParticleGhost() {
             </div>
           </div>
 
+          {/* Particles */}
           <div className="section">
             <div className="section-title">Particles</div>
-            <Slider id="grid"   label="Grid size"       min={2}   max={12} step={1}    def={INITIAL.grid}   fmt={v => v + 'px'} />
-            <Slider id="ps"     label="Base size"       min={0.5} max={4}  step={0.1}  def={INITIAL.ps}     fmt={v => (+v).toFixed(1)} />
-            <Slider id="amp"    label="Anim amplitude"  min={0}   max={2}  step={0.05} def={INITIAL.amp}    fmt={v => (+v).toFixed(2)} />
-            <Slider id="spd"    label="Anim speed"      min={0.1} max={3}  step={0.05} def={INITIAL.spd}    fmt={v => (+v).toFixed(2)} />
-            <Slider id="wscale" label="Wave scale"      min={0.5} max={6}  step={0.1}  def={INITIAL.wscale} fmt={v => (+v).toFixed(1)} />
-            <Slider id="boost"  label="Brightness boost" min={1}  max={3}  step={0.05} def={INITIAL.boost}  fmt={v => (+v).toFixed(2) + 'x'} />
-            <Slider id="partop" label="Particle opacity" min={0.1} max={1} step={0.01} def={INITIAL.partop} fmt={v => (+v).toFixed(2)} />
+            <Slider id="grid"   label="Grid size"        min={2}   max={12} step={1}    def={INITIAL.grid}   fmt={v => v + 'px'} />
+            <Slider id="ps"     label="Base size"        min={0.5} max={4}  step={0.1}  def={INITIAL.ps}     fmt={v => (+v).toFixed(1)}        modKey="ps" />
+            <Slider id="amp"    label="Anim amplitude"   min={0}   max={2}  step={0.05} def={INITIAL.amp}    fmt={v => (+v).toFixed(2)}        modKey="amp" />
+            <Slider id="spd"    label="Anim speed"       min={0.1} max={3}  step={0.05} def={INITIAL.spd}    fmt={v => (+v).toFixed(2)}        modKey="spd" />
+            <Slider id="wscale" label="Wave scale"       min={0.5} max={6}  step={0.1}  def={INITIAL.wscale} fmt={v => (+v).toFixed(1)}        modKey="wscale" />
+            <Slider id="boost"  label="Brightness boost" min={1}   max={3}  step={0.05} def={INITIAL.boost}  fmt={v => (+v).toFixed(2) + 'x'} modKey="boost" />
+            <Slider id="partop" label="Particle opacity" min={0.1} max={1}  step={0.01} def={INITIAL.partop} fmt={v => (+v).toFixed(2)}        modKey="partop" />
           </div>
 
+          {/* Compositing */}
           <div className="section">
             <div className="section-title">Compositing</div>
             <Slider id="imgop" label="Image opacity" min={0} max={1} step={0.01} def={INITIAL.imgop} fmt={v => (+v).toFixed(2)} redraw />
