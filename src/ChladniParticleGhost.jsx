@@ -462,13 +462,12 @@ export default function ChladniParticleGhost() {
 
   const Slider = ({ id, min, max, step, def, fmt, label, modKey }) => (
     <div className="ctrl">
-      <label>{label}</label>
+      <label>{label}<span className="label-sep"> – </span><span className="val" ref={dispRef(id + 'v')}>{fmt(def)}</span></label>
       <input
         type="range" id={id + '-slider'}
         min={min} max={max} step={step} defaultValue={def}
         onChange={makeSliderHandler(id, fmt)}
       />
-      <span className="val" ref={dispRef(id + 'v')}>{fmt(def)}</span>
       {modKey && (
         <label className="mod-wrap" title="Modulate with mic">
           <svg className="mod-mic" width="14" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -648,7 +647,8 @@ export default function ChladniParticleGhost() {
           text-transform: uppercase; letter-spacing: .12em; margin-bottom: 16px;
         }
         .ctrl { display: flex; align-items: center; gap: 14px; margin: 18px 0; }
-        .ctrl label { width: 120px; flex-shrink: 0; color: var(--text-primary); font-size: 14px; }
+        .ctrl label { flex-shrink: 0; color: var(--text-primary); font-size: 14px; }
+        .label-sep { color: var(--text-tertiary); }
         .ctrl input[type=range] {
           flex: 1; min-width: 0; -webkit-appearance: none; height: 6px;
           background: rgba(255,255,255,0.18); border-radius: 3px; outline: none;
@@ -666,7 +666,7 @@ export default function ChladniParticleGhost() {
           border-radius: 50%; background: var(--accent); cursor: pointer;
           box-shadow: 0 2px 6px rgba(0,0,0,0.5);
         }
-        .ctrl .val { width: 52px; text-align: right; font-family: var(--font-mono); font-size: 14px; color: var(--text-primary); }
+        .ctrl .val { font-family: var(--font-mono); font-size: 14px; color: var(--text-secondary); }
         .mod-check {
           flex-shrink: 0; -webkit-appearance: none; appearance: none;
           width: 24px; height: 24px; margin: 0; padding: 0;
@@ -754,11 +754,11 @@ export default function ChladniParticleGhost() {
         .indicator {
           display: flex; align-items: center; gap: 8px;
           flex: 1 1 0;
-          font-family: var(--font-mono); font-size: 11px;
+          font-family: var(--font-mono); font-size: 10px;
           letter-spacing: 0.04em;
           padding: 9px 12px;
           background: transparent;
-          border: 0.5px solid var(--border-strong);
+          border: 1px solid var(--border-strong);
           border-radius: 8px;
           color: var(--text-tertiary);
           transition: color .2s, border-color .2s, background .2s;
@@ -790,11 +790,12 @@ export default function ChladniParticleGhost() {
            the controls live in their own card below that scrolls with the
            page. Labels stack on top of sliders so the thumb can breathe. */
         @media (max-width: 640px) {
-          html, body, #root { height: auto; min-height: 100%; }
+          html, body, #root { height: 100%; overflow: hidden; }
           .chladni-root {
             max-width: none;
-            height: auto;
-            min-height: 100dvh;
+            height: 100dvh;
+            min-height: 0;
+            overflow: hidden;
           }
           #canvas-area {
             flex: 0 0 auto;
@@ -813,7 +814,9 @@ export default function ChladniParticleGhost() {
             aspect-ratio: 1 / 1;
           }
           #controls {
-            flex: 1 1 auto;
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
             padding: 22px 20px 28px;
             margin-top: -14px;
             /* Slightly translucent so the blurred camera bg shows through. */
@@ -828,17 +831,16 @@ export default function ChladniParticleGhost() {
           .section { padding: 18px 0; }
           .ctrl {
             display: grid;
-            grid-template-columns: 1fr auto auto;
+            grid-template-columns: 1fr auto;
             grid-template-areas:
-              "label label val"
-              "slider slider mod";
+              "label label"
+              "slider mod";
             align-items: center;
             column-gap: 12px;
             row-gap: 10px;
             margin: 18px 0;
           }
           .ctrl > label   { grid-area: label; width: auto; font-size: 15px; }
-          .ctrl .val      { grid-area: val; width: auto; font-size: 14px; }
           .ctrl input[type=range] {
             grid-area: slider;
             height: 8px; border-radius: 4px;
