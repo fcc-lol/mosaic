@@ -657,16 +657,16 @@ export default function ChladniParticleGhost() {
             margin: 4px 0;
           }
           /* When the mobile sheet is open, shrink the canvas area so the
-             image remains visible above the sheet (sheet = 2/3, canvas = 1/3). */
+             image is fully visible above the sheet (sheet = 60vh, canvas = 40vh). */
           .chladni-root.sheet-open #canvas-area {
-            padding: 8px 16px;
-            max-height: calc(33vh - 8px);
+            padding: 8px;
+            max-height: 40vh;
           }
           .chladni-root.sheet-open #canvas-wrap {
-            max-width: calc(33vh - 32px);
+            max-width: calc(40vh - 16px);
           }
           .chladni-root.sheet-open header {
-            padding: 8px 20px;
+            display: none;
           }
         }
         /* Lock background scroll while sheet is open */
@@ -697,16 +697,10 @@ export default function ChladniParticleGhost() {
           display: block; height: 1.5px; width: 100%;
           background: currentColor; border-radius: 1px;
         }
-        .sheet-backdrop {
-          position: fixed; inset: 0; z-index: 60;
-          background: rgba(0,0,0,0.55);
-          backdrop-filter: blur(2px);
-          -webkit-backdrop-filter: blur(2px);
-        }
         .mobile-sheet {
           position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-          height: 66.666vh;
-          max-height: 66.666vh;
+          height: 60vh;
+          max-height: 60vh;
           background: var(--bg-primary, #0c0c0c);
           border-top: 0.5px solid var(--border-strong);
           border-top-left-radius: 20px;
@@ -781,25 +775,18 @@ export default function ChladniParticleGhost() {
       {/* Mobile: floating button + draggable bottom sheet */}
       {isMobile && (
         <>
-          <button className="sheet-fab" onClick={() => setSheetOpen(true)} aria-label="open controls">
-            <span className="fab-icon">
-              <span /><span /><span />
-            </span>
-            controls
-          </button>
+          {!sheetOpen && (
+            <button className="sheet-fab" onClick={() => setSheetOpen(true)} aria-label="open controls">
+              <span className="fab-icon">
+                <span /><span /><span />
+              </span>
+              controls
+            </button>
+          )}
 
           <AnimatePresence>
             {sheetOpen && (
               <>
-                <motion.div
-                  key="backdrop"
-                  className="sheet-backdrop"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  onClick={() => setSheetOpen(false)}
-                />
                 <motion.div
                   key="sheet"
                   className="mobile-sheet"
