@@ -617,16 +617,6 @@ export default function ChladniParticleGhost() {
             </div>
           </LayoutGroup>
 
-          <div className="indicators-row">
-            <button
-              type="button"
-              className={'indicator indicator-btn' + (isCameraActive ? ' active' : '')}
-              onClick={isCameraActive ? stopCameraAndMic : () => startCameraAndMic(s.current.facingMode || 'environment')}
-            >
-              <span className="dot" />
-              camera {isCameraActive ? 'active' : 'off'}
-            </button>
-          </div>
         </div>
 
         <div className="camera-side">
