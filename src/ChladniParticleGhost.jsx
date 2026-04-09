@@ -6,6 +6,9 @@ const INITIAL = {
   imgop: 0.25, desat: 0.6, dark: 0.5, grid: 5,
 };
 
+// All rendering happens on a square canvas at this pixel size.
+const CANVAS_SIZE = 600;
+
 // Maximum amount each param can swing upward when audio is at full level
 const MOD_RANGE = {
   m: 7, n: 6, str: 50, thresh: 0.28,
@@ -143,13 +146,21 @@ export default function ChladniParticleGhost() {
     if (!ptX) return;
     const gs = 3;
 
-    // ── camera: pull new frame from video ──────────────────────────────────
+    // ── camera: pull new frame from video (center-cropped + mirrored) ─────
     if (st.cameraMode) {
       const video = videoRef.current;
       const tmp   = cameraTmpRef.current;
-      if (video && tmp && video.readyState >= 2) {
+      if (video && tmp && video.readyState >= 2 && video.videoWidth > 0) {
+        const vw = video.videoWidth, vh = video.videoHeight;
+        const sSize = Math.min(vw, vh);
+        const sx = (vw - sSize) / 2;
+        const sy = (vh - sSize) / 2;
         const tmpCtx = tmp.getContext('2d');
-        tmpCtx.drawImage(video, 0, 0, W, H);
+        tmpCtx.save();
+        tmpCtx.translate(W, 0);
+        tmpCtx.scale(-1, 1);
+        tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, W, H);
+        tmpCtx.restore();
         const imageData = tmpCtx.getImageData(0, 0, W, H);
         st.srcPixels   = imageData.data;
         st.bgImageData = imageData;
@@ -217,16 +228,17 @@ export default function ChladniParticleGhost() {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const maxDim = 800;
-      let w = img.naturalWidth, h = img.naturalHeight;
-      if (w > maxDim || h > maxDim) { const sc = maxDim / Math.max(w, h); w = Math.round(w * sc); h = Math.round(h * sc); }
-      setupCanvas(w, h);
+      // Center-crop the source image to a square, then scale to CANVAS_SIZE.
+      const srcSize = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth  - srcSize) / 2;
+      const sy = (img.naturalHeight - srcSize) / 2;
+      setupCanvas(CANVAS_SIZE, CANVAS_SIZE);
       const tmp = document.createElement('canvas');
-      tmp.width = w; tmp.height = h;
+      tmp.width = CANVAS_SIZE; tmp.height = CANVAS_SIZE;
       const tCtx = tmp.getContext('2d');
-      tCtx.drawImage(img, 0, 0, w, h);
-      s.current.srcPixels   = tCtx.getImageData(0, 0, w, h).data;
-      s.current.bgImageData = tCtx.getImageData(0, 0, w, h);
+      tCtx.drawImage(img, sx, sy, srcSize, srcSize, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      s.current.srcPixels   = tCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE).data;
+      s.current.bgImageData = tCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
       URL.revokeObjectURL(url);
       sampleParticles(); drawBg(); startAnim();
     };
@@ -258,14 +270,24 @@ export default function ChladniParticleGhost() {
       video.srcObject = stream;
       video.onloadedmetadata = () => {
         video.play();
-        const w = video.videoWidth || 640, h = video.videoHeight || 480;
+        // Canvas is always square. The frame loop center-crops and mirrors.
         if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
-        cameraTmpRef.current.width = w; cameraTmpRef.current.height = h;
-        setupCanvas(w, h);
+        cameraTmpRef.current.width  = CANVAS_SIZE;
+        cameraTmpRef.current.height = CANVAS_SIZE;
+        setupCanvas(CANVAS_SIZE, CANVAS_SIZE);
         video.addEventListener('playing', () => {
+          // seed with one frame so particles sample from real colors
+          const vw = video.videoWidth, vh = video.videoHeight;
+          const sSize = Math.min(vw, vh);
+          const sx = (vw - sSize) / 2;
+          const sy = (vh - sSize) / 2;
           const tmpCtx = cameraTmpRef.current.getContext('2d');
-          tmpCtx.drawImage(video, 0, 0, w, h);
-          const imageData = tmpCtx.getImageData(0, 0, w, h);
+          tmpCtx.save();
+          tmpCtx.translate(CANVAS_SIZE, 0);
+          tmpCtx.scale(-1, 1);
+          tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          tmpCtx.restore();
+          const imageData = tmpCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
           s.current.srcPixels   = imageData.data;
           s.current.bgImageData = imageData;
           sampleParticles(); drawBg(); startAnim();
@@ -392,21 +414,21 @@ export default function ChladniParticleGhost() {
         }
         html, body, #root { height: 100%; background: var(--bg); }
         .chladni-root {
-          color: var(--text-primary); font-family: var(--font-sans); font-size: 13px;
+          color: var(--text-primary); font-family: var(--font-sans); font-size: 14px;
           min-height: 100vh; display: grid;
-          grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
+          grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr;
           background: var(--bg);
         }
         .chladni-root header {
-          grid-column: 1 / -1; padding: 16px 24px;
+          grid-column: 1 / -1; padding: 20px 28px;
           border-bottom: 0.5px solid var(--border);
-          display: flex; align-items: baseline; gap: 16px;
+          display: flex; align-items: baseline; gap: 18px;
         }
         .chladni-root header h1 {
-          font-family: var(--font-mono); font-size: 13px; font-weight: 400;
+          font-family: var(--font-mono); font-size: 14px; font-weight: 400;
           color: var(--text-secondary); letter-spacing: .08em;
         }
-        .chladni-root header span { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+        .chladni-root header span { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
         #canvas-area {
           position: relative; display: flex; align-items: center;
           justify-content: center; padding: 24px; overflow: hidden;
@@ -448,29 +470,37 @@ export default function ChladniParticleGhost() {
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
         #c-bg { position: relative; }
         #sidebar {
-          border-left: 0.5px solid var(--border); padding: 20px 16px;
+          border-left: 0.5px solid var(--border); padding: 24px 24px;
           overflow-y: auto; display: flex; flex-direction: column; gap: 0;
         }
-        .section { padding: 14px 0; border-bottom: 0.5px solid var(--border); }
-        .section:last-child { border-bottom: none; }
+        .section { padding: 20px 0; border-bottom: 0.5px solid var(--border); }
+        .section:first-child { padding-top: 4px; }
+        .section:last-child  { border-bottom: none; }
         .section-title {
-          font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary);
-          text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px;
+          font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);
+          text-transform: uppercase; letter-spacing: .12em; margin-bottom: 14px;
         }
-        .ctrl { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-        .ctrl label { width: 108px; flex-shrink: 0; color: var(--text-secondary); font-size: 12px; }
+        .ctrl { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+        .ctrl label { width: 120px; flex-shrink: 0; color: var(--text-secondary); font-size: 13px; }
         .ctrl input[type=range] {
-          flex: 1; -webkit-appearance: none; height: 2px;
+          flex: 1; min-width: 0; -webkit-appearance: none; height: 3px;
           background: var(--border-strong); border-radius: 2px; outline: none;
+          cursor: pointer;
         }
         .ctrl input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none; width: 12px; height: 12px;
+          -webkit-appearance: none; width: 16px; height: 16px;
+          border-radius: 50%; background: var(--accent); cursor: pointer;
+          transition: transform .1s;
+        }
+        .ctrl input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+        .ctrl input[type=range]::-moz-range-thumb {
+          width: 16px; height: 16px; border: none;
           border-radius: 50%; background: var(--accent); cursor: pointer;
         }
-        .ctrl .val { width: 36px; text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); }
+        .ctrl .val { width: 48px; text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); }
         .mod-check {
           flex-shrink: 0; -webkit-appearance: none; appearance: none;
-          width: 14px; height: 14px; margin: 0; padding: 0;
+          width: 16px; height: 16px; margin: 0; padding: 0;
           background: transparent; border: 1px solid rgba(255,255,255,0.35);
           border-radius: 3px; cursor: pointer; position: relative;
           transition: background .15s, border-color .15s, opacity .15s;
@@ -481,49 +511,56 @@ export default function ChladniParticleGhost() {
         }
         .mod-check:checked::after {
           content: ''; position: absolute;
-          left: 3px; top: 0px; width: 4px; height: 8px;
-          border: solid #0c0c0c; border-width: 0 1.5px 1.5px 0;
+          left: 4px; top: 1px; width: 4px; height: 8px;
+          border: solid #0c0c0c; border-width: 0 2px 2px 0;
           transform: rotate(45deg);
         }
         .mod-check:disabled { opacity: 0.5; cursor: not-allowed; }
-        .presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+        .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
         .presets button {
-          font-family: var(--font-mono); font-size: 11px; padding: 3px 9px;
+          font-family: var(--font-mono); font-size: 12px; padding: 5px 11px;
           background: transparent; border: 0.5px solid var(--border-strong);
           border-radius: 4px; color: var(--text-secondary); cursor: pointer;
           transition: background .15s, color .15s;
         }
         .presets button:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
         .source-btn {
-          display: flex; align-items: center; gap: 6px; width: 100%;
-          font-family: var(--font-mono); font-size: 11px; padding: 6px 8px;
+          display: flex; align-items: center; gap: 8px; width: 100%;
+          font-family: var(--font-mono); font-size: 12px; padding: 10px 12px;
           background: transparent; border: 0.5px solid var(--border-strong);
-          border-radius: 4px; color: var(--text-secondary); cursor: pointer;
+          border-radius: 6px; color: var(--text-secondary); cursor: pointer;
           transition: background .15s, color .15s, border-color .15s;
-          margin: 4px 0;
         }
         .source-btn:hover  { background: rgba(255,255,255,0.04); color: var(--text-primary); }
         .source-btn.active { border-color: var(--accent); color: var(--accent); }
-        .source-btn .dot   { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-        .sensitivity-row   { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-        .sensitivity-row label { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
-        #status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-top: 10px; min-height: 16px; }
-        @media (max-width: 760px) {
+        .source-btn .dot   { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+        .sensitivity-row   { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+        .sensitivity-row label { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; width: 80px; }
+        .sensitivity-row input[type=range] {
+          flex: 1; min-width: 0; -webkit-appearance: none; height: 3px;
+          background: var(--border-strong); border-radius: 2px; outline: none; cursor: pointer;
+        }
+        .sensitivity-row input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none; width: 16px; height: 16px;
+          border-radius: 50%; background: var(--accent); cursor: pointer;
+        }
+        #status { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); margin-top: 14px; min-height: 18px; }
+        @media (max-width: 820px) {
           .chladni-root {
             grid-template-columns: 1fr;
             grid-template-rows: auto auto auto;
             min-height: 100vh;
           }
-          .chladni-root header { grid-column: 1; }
+          .chladni-root header { grid-column: 1; padding: 16px 20px; }
           #canvas-area { padding: 16px; min-height: 200px; }
           #sidebar {
             border-left: none;
             border-top: 0.5px solid var(--border);
             width: 100%; max-width: 100%;
-            padding: 16px;
+            padding: 18px 20px;
           }
-          .ctrl label { width: 96px; font-size: 11px; }
-          .ctrl .val  { width: 34px; }
+          .ctrl label { width: 108px; font-size: 12px; }
+          .ctrl .val  { width: 42px; }
           .dz-options-row { flex-direction: column; }
           .dz-divider {
             width: 100%; height: 1px;
@@ -582,7 +619,6 @@ export default function ChladniParticleGhost() {
                 <label>sensitivity</label>
                 <input
                   type="range" min={0.2} max={4} step={0.1} defaultValue={1}
-                  style={{ flex: 1, WebkitAppearance: 'none', height: '2px', background: 'var(--border-strong)', borderRadius: '2px', outline: 'none' }}
                   onChange={e => { s.current.micSensitivity = +e.target.value; }}
                 />
               </div>
