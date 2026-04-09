@@ -361,12 +361,15 @@ export default function ChladniParticleGhost() {
         onChange={makeSliderHandler(id, fmt, redraw)}
       />
       <span className="val" ref={dispRef(id + 'v')}>{fmt(def)}</span>
-      {modKey && isMicActive && (
-        <button
-          className={'mod-toggle' + (micModParams.has(modKey) ? ' active' : '')}
+      {modKey && (
+        <input
+          type="checkbox"
+          className="mod-check"
           title="Modulate with mic"
-          onClick={() => toggleMicParam(modKey)}
-        >m</button>
+          checked={micModParams.has(modKey)}
+          disabled={!isMicActive}
+          onChange={() => toggleMicParam(modKey)}
+        />
       )}
     </div>
   );
@@ -391,7 +394,7 @@ export default function ChladniParticleGhost() {
         .chladni-root {
           color: var(--text-primary); font-family: var(--font-sans); font-size: 13px;
           min-height: 100vh; display: grid;
-          grid-template-columns: 1fr 300px; grid-template-rows: auto 1fr;
+          grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
           background: var(--bg);
         }
         .chladni-root header {
@@ -407,27 +410,28 @@ export default function ChladniParticleGhost() {
         #canvas-area {
           position: relative; display: flex; align-items: center;
           justify-content: center; padding: 24px; overflow: hidden;
+          min-height: 240px;
         }
         #drop-zone {
-          position: absolute; inset: 24px;
+          width: 100%; max-width: 440px; padding: 28px 24px;
           border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
           display: flex; flex-direction: column; align-items: center;
-          justify-content: center; gap: 20px; z-index: 2;
+          justify-content: center; gap: 8px;
           transition: border-color .2s, background .2s;
         }
         #drop-zone:hover { border-color: rgba(255,255,255,0.25); }
         #drop-zone.drag  { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.02); }
         #drop-zone input { display: none; }
-        .dz-options-row  { display: flex; align-items: center; }
+        .dz-options-row  { display: flex; align-items: stretch; width: 100%; }
         .dz-option {
-          display: flex; flex-direction: column; align-items: center; gap: 6px;
-          cursor: pointer; padding: 16px 28px; border-radius: var(--radius);
-          transition: background .15s;
+          flex: 1; display: flex; flex-direction: column; align-items: center;
+          gap: 4px; cursor: pointer; padding: 12px 16px;
+          border-radius: var(--radius); transition: background .15s;
         }
         .dz-option:hover        { background: rgba(255,255,255,0.04); }
-        .dz-option .dz-title    { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-        .dz-option .dz-sub      { font-size: 11px; color: var(--text-secondary); }
-        .dz-divider             { width: 1px; height: 40px; background: var(--border-strong); }
+        .dz-option .dz-title    { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+        .dz-option .dz-sub      { font-size: 10px; color: var(--text-secondary); }
+        .dz-divider             { width: 1px; background: var(--border-strong); margin: 4px 0; }
         #stop-camera-btn {
           position: absolute; top: 36px; right: 36px; z-index: 10;
           font-family: var(--font-mono); font-size: 11px; padding: 4px 12px;
@@ -454,7 +458,7 @@ export default function ChladniParticleGhost() {
           text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px;
         }
         .ctrl { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-        .ctrl label { width: 118px; flex-shrink: 0; color: var(--text-secondary); font-size: 12px; }
+        .ctrl label { width: 108px; flex-shrink: 0; color: var(--text-secondary); font-size: 12px; }
         .ctrl input[type=range] {
           flex: 1; -webkit-appearance: none; height: 2px;
           background: var(--border-strong); border-radius: 2px; outline: none;
@@ -463,17 +467,25 @@ export default function ChladniParticleGhost() {
           -webkit-appearance: none; width: 12px; height: 12px;
           border-radius: 50%; background: var(--accent); cursor: pointer;
         }
-        .ctrl .val { width: 40px; text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); }
-        .mod-toggle {
-          flex-shrink: 0; width: 18px; height: 18px; padding: 0;
-          font-family: var(--font-mono); font-size: 9px; font-weight: 400;
-          background: transparent; border: 0.5px solid var(--border-strong);
-          border-radius: 3px; color: var(--text-tertiary); cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          transition: background .15s, color .15s, border-color .15s;
+        .ctrl .val { width: 36px; text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); }
+        .mod-check {
+          flex-shrink: 0; -webkit-appearance: none; appearance: none;
+          width: 14px; height: 14px; margin: 0; padding: 0;
+          background: transparent; border: 1px solid rgba(255,255,255,0.35);
+          border-radius: 3px; cursor: pointer; position: relative;
+          transition: background .15s, border-color .15s, opacity .15s;
         }
-        .mod-toggle:hover  { color: var(--text-secondary); border-color: rgba(255,255,255,0.25); }
-        .mod-toggle.active { background: var(--accent); border-color: var(--accent); color: #0c0c0c; }
+        .mod-check:hover:not(:disabled) { border-color: rgba(255,255,255,0.6); }
+        .mod-check:checked {
+          background: var(--accent); border-color: var(--accent);
+        }
+        .mod-check:checked::after {
+          content: ''; position: absolute;
+          left: 3px; top: 0px; width: 4px; height: 8px;
+          border: solid #0c0c0c; border-width: 0 1.5px 1.5px 0;
+          transform: rotate(45deg);
+        }
+        .mod-check:disabled { opacity: 0.5; cursor: not-allowed; }
         .presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
         .presets button {
           font-family: var(--font-mono); font-size: 11px; padding: 3px 9px;
@@ -496,10 +508,27 @@ export default function ChladniParticleGhost() {
         .sensitivity-row   { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
         .sensitivity-row label { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
         #status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-top: 10px; min-height: 16px; }
-        @media (max-width: 700px) {
-          .chladni-root { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
-          #sidebar { border-left: none; border-top: 0.5px solid var(--border); }
+        @media (max-width: 760px) {
+          .chladni-root {
+            grid-template-columns: 1fr;
+            grid-template-rows: auto auto auto;
+            min-height: 100vh;
+          }
           .chladni-root header { grid-column: 1; }
+          #canvas-area { padding: 16px; min-height: 200px; }
+          #sidebar {
+            border-left: none;
+            border-top: 0.5px solid var(--border);
+            width: 100%; max-width: 100%;
+            padding: 16px;
+          }
+          .ctrl label { width: 96px; font-size: 11px; }
+          .ctrl .val  { width: 34px; }
+          .dz-options-row { flex-direction: column; }
+          .dz-divider {
+            width: 100%; height: 1px;
+            margin: 4px 0;
+          }
         }
       `}</style>
 
