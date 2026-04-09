@@ -100,7 +100,7 @@ export default function ChladniParticleGhost() {
     cameraMode: false, cameraStream: null,
     facingMode: 'environment',
     captured: false,
-    micMode: false, analyser: null, audioStream: null, audioCtx: null,
+    micMode: false, micMuted: false, analyser: null, audioStream: null, audioCtx: null,
     audioLevel: 0, micSensitivity: 3.0,
     micMod: Object.fromEntries(Object.keys(MOD_RANGE).map(k => [k, false])),
     ...INITIAL,
@@ -109,6 +109,7 @@ export default function ChladniParticleGhost() {
   // React state only for UI that affects render
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMicActive,    setIsMicActive]    = useState(false);
+  const [isMicMuted,     setIsMicMuted]     = useState(false);
   const [micModParams,   setMicModParams]   = useState(new Set());
   const [facingMode,     setFacingMode]     = useState('environment');
   const [isCaptured,     setIsCaptured]     = useState(false);
@@ -147,7 +148,6 @@ export default function ChladniParticleGhost() {
       }
     }
     s.current.particles = particles;
-    if (statusRef.current) statusRef.current.textContent = particles.length.toLocaleString() + ' particles';
   }, []);
 
   // Refresh particle colors in-place from current srcPixels (used in camera mode)
@@ -488,6 +488,14 @@ export default function ChladniParticleGhost() {
     if (s.current.micMode) stopMic();
   }, [stopCamera, stopMic]);
 
+  const toggleMicMute = useCallback(() => {
+    const st = s.current;
+    const newMuted = !st.micMuted;
+    st.micMuted = newMuted;
+    if (st.audioStream) st.audioStream.getAudioTracks().forEach(t => { t.enabled = !newMuted; });
+    setIsMicMuted(newMuted);
+  }, []);
+
   const toggleMicParam = useCallback((key) => {
     s.current.micMod[key] = !s.current.micMod[key];
     setMicModParams(prev => {
@@ -573,48 +581,64 @@ export default function ChladniParticleGhost() {
         />
       </div>
 
-      <LayoutGroup>
-        <div className="action-row">
-          <AnimatePresence mode="popLayout">
-            {isCaptured && (
+      <div className="camera-block">
+        <div className="camera-main">
+          <LayoutGroup>
+            <div className="action-row">
+              <AnimatePresence mode="popLayout">
+                {isCaptured && (
+                  <motion.button
+                    key="clear"
+                    layout
+                    className="chunk-btn clear-btn"
+                    initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                    animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
+                    exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                    transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                    onClick={clearCapture}
+                  >
+                    Clear
+                  </motion.button>
+                )}
+              </AnimatePresence>
+
               <motion.button
-                key="clear"
                 layout
-                className="chunk-btn clear-btn"
-                initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
-                exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                className="chunk-btn primary main-action"
+                onClick={
+                  !isCameraActive
+                    ? () => startCameraAndMic(s.current.facingMode || 'environment')
+                    : (isCaptured ? savePhoto : captureImage)
+                }
                 transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={clearCapture}
               >
-                Clear
+                {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
               </motion.button>
-            )}
-          </AnimatePresence>
+            </div>
+          </LayoutGroup>
 
-          <motion.button
-            layout
-            className="chunk-btn primary main-action"
-            onClick={
-              !isCameraActive
-                ? () => startCameraAndMic(s.current.facingMode || 'environment')
-                : (isCaptured ? savePhoto : captureImage)
-            }
-            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-          >
-            {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
-          </motion.button>
+          <div className="indicators-row">
+            <button
+              type="button"
+              className={'indicator indicator-btn' + (isCameraActive ? ' active' : '')}
+              onClick={isCameraActive ? stopCameraAndMic : () => startCameraAndMic(s.current.facingMode || 'environment')}
+            >
+              <span className="dot" />
+              camera {isCameraActive ? 'active' : 'off'}
+            </button>
+          </div>
+        </div>
 
-          <AnimatePresence mode="popLayout">
+        <div className="camera-side">
+          <AnimatePresence>
             {isCameraActive && !isCaptured && (
               <motion.button
                 key="swap"
-                layout
                 className="icon-btn swap-btn"
-                initial={{ opacity: 0, width: 0, marginLeft: 0 }}
-                animate={{ opacity: 1, width: 48, marginLeft: 0 }}
-                exit={{ opacity: 0, width: 0, marginLeft: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
                 onClick={toggleFacingMode}
                 title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
                 aria-label="swap camera"
@@ -628,13 +652,35 @@ export default function ChladniParticleGhost() {
               </motion.button>
             )}
           </AnimatePresence>
+
+          <button
+            className={'icon-btn mic-toggle' + (isMicMuted ? ' muted' : '')}
+            onClick={toggleMicMute}
+            title={isMicMuted ? 'Unmute mic' : 'Mute mic'}
+            aria-label={isMicMuted ? 'Unmute mic' : 'Mute mic'}
+          >
+            {isMicMuted ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="3" y1="3" x2="21" y2="21" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+              </svg>
+            )}
+          </button>
         </div>
-      </LayoutGroup>
+      </div>
 
       <div className="wave-mod-row">
         <button
           className={'mic-mod-btn' + (waveModActive ? ' active' : '')}
-          disabled={!isMicActive}
+          disabled={!isMicActive || isMicMuted}
           onClick={toggleWaveMod}
           title="Modulate all wave params with mic input"
         >
@@ -646,23 +692,6 @@ export default function ChladniParticleGhost() {
           mic mod
         </button>
       </div>
-
-      <div className="indicators-row">
-        <div className={'indicator' + (isMicActive ? ' active' : '')}>
-          <span className="dot" />
-          mic {isMicActive ? 'active' : 'off'}
-        </div>
-        <button
-          type="button"
-          className={'indicator indicator-btn' + (isCameraActive ? ' active' : '')}
-          onClick={isCameraActive ? stopCameraAndMic : () => startCameraAndMic(s.current.facingMode || 'environment')}
-        >
-          <span className="dot" />
-          camera {isCameraActive ? 'active' : 'off'}
-        </button>
-      </div>
-
-      <div id="status" ref={statusRef} />
     </>
   );
 
@@ -780,6 +809,9 @@ export default function ChladniParticleGhost() {
 
         /* Source area: main action + optional swap/clear + indicators */
         .source-grid { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+        .camera-block { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+        .camera-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+        .camera-side { flex-shrink: 0; width: 48px; display: flex; flex-direction: column; gap: 8px; }
         .action-row  { display: flex; align-items: stretch; gap: 10px; width: 100%; }
         .chunk-btn {
           display: flex; align-items: center; justify-content: center;
@@ -832,9 +864,12 @@ export default function ChladniParticleGhost() {
         }
         .icon-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent); }
         .icon-btn svg   { flex-shrink: 0; }
+        .mic-toggle { background: transparent; }
+        .mic-toggle:hover { background: rgba(255,255,255,0.06); }
+        .mic-toggle.muted { color: var(--text-tertiary); }
 
-        /* Indicators row — mic is read-only, camera toggles the feed */
-        .indicators-row { display: flex; gap: 8px; width: 100%; margin-top: 8px; }
+        /* Indicators row — camera indicator only, aligned under capture button */
+        .indicators-row { display: flex; gap: 8px; width: 100%; }
         .indicator {
           display: flex; align-items: center; gap: 8px;
           flex: 1 1 0;
@@ -867,7 +902,7 @@ export default function ChladniParticleGhost() {
         }
         .indicator-btn:hover { background: rgba(255,255,255,0.04); color: var(--text-secondary); }
         .indicator-btn.active:hover { color: var(--accent); background: rgba(200,192,168,0.06); }
-        #status { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); margin-top: 14px; min-height: 18px; }
+        #status { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
 
         /* Mobile: canvas fills the full viewport width (staying square), and
            the controls live in their own card below that scrolls with the
