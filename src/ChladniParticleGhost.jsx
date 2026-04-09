@@ -28,6 +28,7 @@ export default function ChladniParticleGhost() {
   const statusRef        = useRef(null);
   const videoRef         = useRef(null);
   const cameraTmpRef     = useRef(null);
+  const bgCanvasRef      = useRef(null); // tiny downsampled frame blurred as app bg
   const audioDataRef     = useRef(null); // cached Uint8Array for analyser reads
 
   // All animation-loop mutable state — never causes re-renders.
@@ -165,6 +166,10 @@ export default function ChladniParticleGhost() {
         const imageData = tmpCtx.getImageData(0, 0, W, H);
         st.srcPixels   = imageData.data;
         refreshParticleColors();
+        // Feed a tiny downsampled copy to the blurred background canvas so
+        // the whole app feels reactive to what the camera is seeing.
+        const bgC = bgCanvasRef.current;
+        if (bgC) bgC.getContext('2d').drawImage(tmp, 0, 0, bgC.width, bgC.height);
       }
     }
 
@@ -258,6 +263,8 @@ export default function ChladniParticleGhost() {
     if (st.animId) { cancelAnimationFrame(st.animId); st.animId = null; }
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (ptX && ptCanvasRef.current) ptX.clearRect(0, 0, ptCanvasRef.current.width, ptCanvasRef.current.height);
+    const bgC = bgCanvasRef.current;
+    if (bgC) bgC.getContext('2d').clearRect(0, 0, bgC.width, bgC.height);
     st.particles = []; st.srcPixels = null;
     if (statusRef.current) statusRef.current.textContent = '';
     setIsCameraActive(false);
@@ -593,11 +600,25 @@ export default function ChladniParticleGhost() {
           --radius: 8px; --radius-lg: 12px;
         }
         html, body, #root { height: 100%; background: var(--bg); }
+        /* Downsampled, heavily blurred camera feed sitting over the black
+           body background — tints the whole app in response to what the
+           camera sees. */
+        #bg-canvas {
+          position: fixed;
+          top: -5%; left: -5%;
+          width: 110%; height: 110%;
+          opacity: 0.2;
+          filter: blur(60px);
+          pointer-events: none;
+          z-index: 0;
+          display: block;
+        }
         .chladni-root {
           color: var(--text-primary); font-family: var(--font-sans); font-size: 14px;
           height: 100dvh; min-height: 0; display: flex; flex-direction: column;
           max-width: 640px; margin: 0 auto;
-          background: var(--bg);
+          background: transparent;
+          position: relative; z-index: 1;
         }
         #canvas-area {
           position: relative; flex: 1 1 0; min-height: 0;
@@ -765,12 +786,45 @@ export default function ChladniParticleGhost() {
         .indicator-btn.active:hover { color: var(--accent); background: rgba(200,192,168,0.06); }
         #status { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); margin-top: 14px; min-height: 18px; }
 
-        /* Mobile: full-width controls, labels stacked on top of sliders so
-           the slider track and thumb can breathe. */
+        /* Mobile: canvas fills the full viewport width (staying square), and
+           the controls live in their own card below that scrolls with the
+           page. Labels stack on top of sliders so the thumb can breathe. */
         @media (max-width: 640px) {
-          .chladni-root { max-width: none; }
-          #canvas-area { padding: 10px; }
-          #controls { padding: 0 16px 18px; }
+          html, body, #root { height: auto; min-height: 100%; }
+          .chladni-root {
+            max-width: none;
+            height: auto;
+            min-height: 100dvh;
+          }
+          #canvas-area {
+            flex: 0 0 auto;
+            padding: 0;
+            width: 100vw;
+            aspect-ratio: 1 / 1;
+            overflow: visible;
+          }
+          #canvas-wrap {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            border-radius: 0;
+            border: none;
+            aspect-ratio: 1 / 1;
+          }
+          #controls {
+            flex: 1 1 auto;
+            padding: 22px 20px 28px;
+            margin-top: -14px;
+            /* Slightly translucent so the blurred camera bg shows through. */
+            background: rgba(22, 22, 22, 0.78);
+            border-top-left-radius: var(--radius-lg);
+            border-top-right-radius: var(--radius-lg);
+            border-top: 0.5px solid var(--border);
+            position: relative;
+            z-index: 1;
+          }
+          .section:first-child { padding-top: 4px; }
           .section { padding: 18px 0; }
           .ctrl {
             display: grid;
@@ -800,6 +854,8 @@ export default function ChladniParticleGhost() {
       `}</style>
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
+
+      <canvas id="bg-canvas" ref={bgCanvasRef} width={24} height={24} />
 
       <div className="chladni-root">
         <div id="canvas-area">
