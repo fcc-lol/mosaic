@@ -560,115 +560,106 @@ export default function ChladniParticleGhost() {
 
   const renderControls = () => (
     <>
-      {/* Source */}
-      <div className="section">
-        <div className="section-title">Source</div>
-
-        <LayoutGroup>
-          <div className="action-row">
-            <AnimatePresence mode="popLayout">
-              {isCaptured && (
-                <motion.button
-                  key="clear"
-                  layout
-                  className="chunk-btn clear-btn"
-                  initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                  animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
-                  exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                  onClick={clearCapture}
-                >
-                  Clear
-                </motion.button>
-              )}
-            </AnimatePresence>
-
-            <motion.button
-              layout
-              className="chunk-btn primary main-action"
-              onClick={
-                !isCameraActive
-                  ? () => startCameraAndMic(s.current.facingMode || 'environment')
-                  : (isCaptured ? savePhoto : captureImage)
-              }
-              transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-            >
-              {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
-            </motion.button>
-
-            <AnimatePresence mode="popLayout">
-              {isCameraActive && !isCaptured && (
-                <motion.button
-                  key="swap"
-                  layout
-                  className="icon-btn swap-btn"
-                  initial={{ opacity: 0, width: 0, marginLeft: 0 }}
-                  animate={{ opacity: 1, width: 48, marginLeft: 0 }}
-                  exit={{ opacity: 0, width: 0, marginLeft: 0 }}
-                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                  onClick={toggleFacingMode}
-                  title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
-                  aria-label="swap camera"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 2l4 4-4 4" />
-                    <path d="M3 12V10a4 4 0 0 1 4-4h14" />
-                    <path d="M7 22l-4-4 4-4" />
-                    <path d="M21 12v2a4 4 0 0 1-4 4H3" />
-                  </svg>
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
-        </LayoutGroup>
-
-        <div className="indicators-row">
-          <div className={'indicator' + (isMicActive ? ' active' : '')}>
-            <span className="dot" />
-            mic {isMicActive ? 'active' : 'off'}
-          </div>
-          <button
-            type="button"
-            className={'indicator indicator-btn' + (isCameraActive ? ' active' : '')}
-            onClick={isCameraActive ? stopCameraAndMic : () => startCameraAndMic(s.current.facingMode || 'environment')}
-          >
-            <span className="dot" />
-            camera {isCameraActive ? 'active' : 'off'}
-          </button>
-        </div>
-
+      <div className="matrices-row">
+        <MatrixController
+          xValues={M_VALUES} yValues={N_VALUES}
+          xVal={mVal} yVal={nVal}
+          onSelect={(m, n) => { s.current.m = m; s.current.n = n; setMVal(m); setNVal(n); }}
+        />
+        <MatrixController
+          xValues={SETTLE_VALUES} yValues={SETTLE_VALUES}
+          xVal={sprdVal} yVal={convVal}
+          onSelect={(sprd, conv) => { s.current.sprd = sprd; s.current.conv = conv; setSprdVal(sprd); setConvVal(conv); }}
+        />
       </div>
 
-      {/* Wave */}
-      <div className="section">
-        <div className="section-title">Wave</div>
-        <div className="matrices-row">
-          <MatrixController
-            xValues={M_VALUES} yValues={N_VALUES}
-            xVal={mVal} yVal={nVal}
-            onSelect={(m, n) => { s.current.m = m; s.current.n = n; setMVal(m); setNVal(n); }}
-          />
-          <MatrixController
-            xValues={SETTLE_VALUES} yValues={SETTLE_VALUES}
-            xVal={sprdVal} yVal={convVal}
-            onSelect={(sprd, conv) => { s.current.sprd = sprd; s.current.conv = conv; setSprdVal(sprd); setConvVal(conv); }}
-          />
-        </div>
-        <div className="wave-mod-row">
-          <button
-            className={'mic-mod-btn' + (waveModActive ? ' active' : '')}
-            disabled={!isMicActive}
-            onClick={toggleWaveMod}
-            title="Modulate all wave params with mic input"
+      <LayoutGroup>
+        <div className="action-row">
+          <AnimatePresence mode="popLayout">
+            {isCaptured && (
+              <motion.button
+                key="clear"
+                layout
+                className="chunk-btn clear-btn"
+                initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
+                exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={clearCapture}
+              >
+                Clear
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          <motion.button
+            layout
+            className="chunk-btn primary main-action"
+            onClick={
+              !isCameraActive
+                ? () => startCameraAndMic(s.current.facingMode || 'environment')
+                : (isCaptured ? savePhoto : captureImage)
+            }
+            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
           >
-            <svg width="12" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="9" y="2" width="6" height="12" rx="3" />
-              <path d="M5 11a7 7 0 0 0 14 0" />
-              <line x1="12" y1="18" x2="12" y2="22" />
-            </svg>
-            mic mod
-          </button>
+            {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
+          </motion.button>
+
+          <AnimatePresence mode="popLayout">
+            {isCameraActive && !isCaptured && (
+              <motion.button
+                key="swap"
+                layout
+                className="icon-btn swap-btn"
+                initial={{ opacity: 0, width: 0, marginLeft: 0 }}
+                animate={{ opacity: 1, width: 48, marginLeft: 0 }}
+                exit={{ opacity: 0, width: 0, marginLeft: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={toggleFacingMode}
+                title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
+                aria-label="swap camera"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 2l4 4-4 4" />
+                  <path d="M3 12V10a4 4 0 0 1 4-4h14" />
+                  <path d="M7 22l-4-4 4-4" />
+                  <path d="M21 12v2a4 4 0 0 1-4 4H3" />
+                </svg>
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
+      </LayoutGroup>
+
+      <div className="wave-mod-row">
+        <button
+          className={'mic-mod-btn' + (waveModActive ? ' active' : '')}
+          disabled={!isMicActive}
+          onClick={toggleWaveMod}
+          title="Modulate all wave params with mic input"
+        >
+          <svg width="12" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 11a7 7 0 0 0 14 0" />
+            <line x1="12" y1="18" x2="12" y2="22" />
+          </svg>
+          mic mod
+        </button>
+      </div>
+
+      <div className="indicators-row">
+        <div className={'indicator' + (isMicActive ? ' active' : '')}>
+          <span className="dot" />
+          mic {isMicActive ? 'active' : 'off'}
+        </div>
+        <button
+          type="button"
+          className={'indicator indicator-btn' + (isCameraActive ? ' active' : '')}
+          onClick={isCameraActive ? stopCameraAndMic : () => startCameraAndMic(s.current.facingMode || 'environment')}
+        >
+          <span className="dot" />
+          camera {isCameraActive ? 'active' : 'off'}
+        </button>
       </div>
 
       <div id="status" ref={statusRef} />
@@ -843,18 +834,18 @@ export default function ChladniParticleGhost() {
         .icon-btn svg   { flex-shrink: 0; }
 
         /* Indicators row — mic is read-only, camera toggles the feed */
-        .indicators-row { display: flex; gap: 8px; width: 100%; margin-top: 14px; }
+        .indicators-row { display: flex; gap: 8px; width: 100%; margin-top: 8px; }
         .indicator {
           display: flex; align-items: center; gap: 8px;
           flex: 1 1 0;
           font-family: var(--font-mono); font-size: 10px;
           letter-spacing: 0.04em;
-          padding: 9px 12px;
+          padding: 8px;
           background: transparent;
-          border: 1px solid var(--border-strong);
+          border: none;
           border-radius: 8px;
           color: var(--text-tertiary);
-          transition: color .2s, border-color .2s, background .2s;
+          transition: color .2s, background .2s;
         }
         .indicator .dot {
           width: 7px; height: 7px; border-radius: 50%;
@@ -862,7 +853,6 @@ export default function ChladniParticleGhost() {
         }
         .indicator.active {
           color: var(--accent);
-          border-color: rgba(200,192,168,0.35);
         }
         .indicator.active .dot {
           background: #d97a5a;
@@ -895,7 +885,8 @@ export default function ChladniParticleGhost() {
             padding: 0;
             width: 100vw;
             aspect-ratio: 1 / 1;
-            overflow: visible;
+            max-height: 50dvh;
+            overflow: hidden;
           }
           #canvas-wrap {
             width: 100%;
@@ -910,7 +901,7 @@ export default function ChladniParticleGhost() {
             flex: 1 1 0;
             min-height: 0;
             overflow-y: auto;
-            padding: 22px 20px 28px;
+            padding: 14px 20px 16px;
             /* Slightly translucent so the blurred camera bg shows through. */
             background: rgba(22, 22, 22, 0.78);
             border-top-left-radius: var(--radius-lg);
@@ -946,7 +937,7 @@ export default function ChladniParticleGhost() {
           .ctrl .mod-wrap { grid-area: mod; font-size: 0; }
         }
         /* Matrix controllers */
-        .matrices-row { display: flex; gap: 14px; margin-bottom: 14px; }
+        .matrices-row { display: flex; gap: 14px; margin-bottom: 10px; }
         .matrix-svg {
           display: block; border-radius: 10px;
           background: rgba(255,255,255,0.04);
@@ -955,7 +946,7 @@ export default function ChladniParticleGhost() {
           -webkit-tap-highlight-color: transparent;
           touch-action: none;
         }
-        .wave-mod-row { display: flex; }
+        .wave-mod-row { display: flex; justify-content: center; margin-top: 8px; margin-bottom: 2px; }
         .mic-mod-btn {
           display: inline-flex; align-items: center; gap: 6px;
           font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
