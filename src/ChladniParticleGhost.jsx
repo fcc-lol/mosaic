@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const INITIAL = {
   m: 3, n: 4, str: 30, thresh: 0.12,
@@ -41,7 +42,18 @@ export default function ChladniParticleGhost() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMicActive,    setIsMicActive]    = useState(false);
   const [micModParams,   setMicModParams]   = useState(new Set());
+  const [isMobile,       setIsMobile]       = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches
+  );
+  const [sheetOpen,      setSheetOpen]      = useState(false);
   const dispRefs = useRef({});
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const setDisp = useCallback((id, text) => {
     if (dispRefs.current[id]) dispRefs.current[id].textContent = text;
@@ -216,11 +228,9 @@ export default function ChladniParticleGhost() {
     const bgC = bgCanvasRef.current, ptC = ptCanvasRef.current;
     bgC.width = ptC.width = w;
     bgC.height = ptC.height = h;
-    const wrap = canvasWrapRef.current;
-    wrap.style.width = w + 'px';
-    wrap.style.height = h + 'px';
-    wrap.style.maxWidth = '100%';
-    wrap.classList.add('visible');
+    // The canvas is always square — let CSS (aspect-ratio) handle responsive
+    // sizing so the feed doesn't stretch on narrow viewports.
+    canvasWrapRef.current.classList.add('visible');
     if (dropZoneRef.current) dropZoneRef.current.style.display = 'none';
   }, []);
 
@@ -262,7 +272,14 @@ export default function ChladniParticleGhost() {
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
+      // Prefer the back-facing camera on mobile; desktop will just ignore this hint.
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      const videoConstraints = {
+        width:  { ideal: 1280 },
+        height: { ideal: 720 },
+        ...(isMobile ? { facingMode: { ideal: 'environment' } } : {}),
+      };
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       s.current.cameraStream = stream;
       s.current.cameraMode   = true;
       setIsCameraActive(true);
@@ -396,6 +413,69 @@ export default function ChladniParticleGhost() {
     </div>
   );
 
+  // ── shared control markup (rendered inline on desktop, inside sheet on mobile) ──
+
+  const renderControls = () => (
+    <>
+      {/* Source */}
+      <div className="section">
+        <div className="section-title">Source</div>
+        <button
+          className={'source-btn' + (isMicActive ? ' active' : '')}
+          onClick={isMicActive ? stopMic : startMic}
+        >
+          <span className="dot" />
+          {isMicActive ? 'mic active — click to stop' : 'use microphone'}
+        </button>
+        {isMicActive && (
+          <div className="sensitivity-row">
+            <label>sensitivity</label>
+            <input
+              type="range" min={0.2} max={4} step={0.1} defaultValue={1}
+              onChange={e => { s.current.micSensitivity = +e.target.value; }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Wave */}
+      <div className="section">
+        <div className="section-title">Wave</div>
+        <Slider id="m"      label="Mode m"         min={1}    max={10}  step={1}    def={INITIAL.m}      fmt={v => v}               modKey="m" />
+        <Slider id="n"      label="Mode n"         min={1}    max={10}  step={1}    def={INITIAL.n}      fmt={v => v}               modKey="n" />
+        <Slider id="str"    label="Warp strength"  min={0}    max={80}  step={1}    def={INITIAL.str}    fmt={v => v}               modKey="str" />
+        <Slider id="thresh" label="Node threshold" min={0.01} max={0.4} step={0.01} def={INITIAL.thresh} fmt={v => (+v).toFixed(2)} modKey="thresh" />
+        <div className="presets">
+          {[[2,3],[3,4],[3,5],[4,5],[5,7],[6,7],[7,9]].map(([mv,nv]) => (
+            <button key={`${mv},${nv}`} onClick={() => preset(mv, nv)}>{mv},{nv}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Particles */}
+      <div className="section">
+        <div className="section-title">Particles</div>
+        <Slider id="grid"   label="Grid size"        min={2}   max={12} step={1}    def={INITIAL.grid}   fmt={v => v + 'px'} />
+        <Slider id="ps"     label="Base size"        min={0.5} max={4}  step={0.1}  def={INITIAL.ps}     fmt={v => (+v).toFixed(1)}        modKey="ps" />
+        <Slider id="amp"    label="Anim amplitude"   min={0}   max={2}  step={0.05} def={INITIAL.amp}    fmt={v => (+v).toFixed(2)}        modKey="amp" />
+        <Slider id="spd"    label="Anim speed"       min={0.1} max={3}  step={0.05} def={INITIAL.spd}    fmt={v => (+v).toFixed(2)}        modKey="spd" />
+        <Slider id="wscale" label="Wave scale"       min={0.5} max={6}  step={0.1}  def={INITIAL.wscale} fmt={v => (+v).toFixed(1)}        modKey="wscale" />
+        <Slider id="boost"  label="Brightness boost" min={1}   max={3}  step={0.05} def={INITIAL.boost}  fmt={v => (+v).toFixed(2) + 'x'} modKey="boost" />
+        <Slider id="partop" label="Particle opacity" min={0.1} max={1}  step={0.01} def={INITIAL.partop} fmt={v => (+v).toFixed(2)}        modKey="partop" />
+      </div>
+
+      {/* Compositing */}
+      <div className="section">
+        <div className="section-title">Compositing</div>
+        <Slider id="imgop" label="Image opacity" min={0} max={1} step={0.01} def={INITIAL.imgop} fmt={v => (+v).toFixed(2)} redraw />
+        <Slider id="desat" label="Desaturate"    min={0} max={1} step={0.01} def={INITIAL.desat} fmt={v => (+v).toFixed(2)} redraw />
+        <Slider id="dark"  label="Darken"        min={0} max={1} step={0.01} def={INITIAL.dark}  fmt={v => (+v).toFixed(2)} redraw />
+      </div>
+
+      <div id="status" ref={statusRef} />
+    </>
+  );
+
   // ── render ───────────────────────────────────────────────────────────────
 
   return (
@@ -464,7 +544,8 @@ export default function ChladniParticleGhost() {
         #stop-camera-btn:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.3); }
         #canvas-wrap {
           position: relative; border-radius: var(--radius-lg); overflow: hidden;
-          background: #000; display: none; max-width: 100%;
+          background: #000; display: none;
+          width: 100%; max-width: 600px; aspect-ratio: 1 / 1;
         }
         #canvas-wrap.visible { display: block; }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
@@ -548,17 +629,11 @@ export default function ChladniParticleGhost() {
         @media (max-width: 820px) {
           .chladni-root {
             grid-template-columns: 1fr;
-            grid-template-rows: auto auto auto;
+            grid-template-rows: auto 1fr;
             min-height: 100vh;
           }
           .chladni-root header { grid-column: 1; padding: 16px 20px; }
-          #canvas-area { padding: 16px; min-height: 200px; }
-          #sidebar {
-            border-left: none;
-            border-top: 0.5px solid var(--border);
-            width: 100%; max-width: 100%;
-            padding: 18px 20px;
-          }
+          #canvas-area { padding: 16px 16px 96px; min-height: 200px; }
           .ctrl label { width: 108px; font-size: 12px; }
           .ctrl .val  { width: 42px; }
           .dz-options-row { flex-direction: column; }
@@ -567,6 +642,68 @@ export default function ChladniParticleGhost() {
             margin: 4px 0;
           }
         }
+
+        /* Mobile controls sheet */
+        .sheet-fab {
+          position: fixed; right: 18px; bottom: 18px; z-index: 50;
+          display: flex; align-items: center; gap: 10px;
+          font-family: var(--font-mono); font-size: 12px;
+          text-transform: uppercase; letter-spacing: .1em;
+          padding: 12px 18px;
+          background: rgba(12,12,12,0.92);
+          border: 0.5px solid var(--border-strong);
+          border-radius: 999px;
+          color: var(--text-primary);
+          cursor: pointer;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.35);
+        }
+        .sheet-fab:active { transform: scale(0.97); }
+        .fab-icon {
+          display: inline-flex; flex-direction: column; justify-content: center;
+          gap: 3px; width: 14px; height: 14px;
+        }
+        .fab-icon span {
+          display: block; height: 1.5px; width: 100%;
+          background: currentColor; border-radius: 1px;
+        }
+        .sheet-backdrop {
+          position: fixed; inset: 0; z-index: 60;
+          background: rgba(0,0,0,0.55);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+        }
+        .mobile-sheet {
+          position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
+          max-height: 82vh;
+          background: var(--bg-primary, #0c0c0c);
+          border-top: 0.5px solid var(--border-strong);
+          border-top-left-radius: 20px;
+          border-top-right-radius: 20px;
+          box-shadow: 0 -12px 40px rgba(0,0,0,0.55);
+          display: flex; flex-direction: column;
+          touch-action: none;
+          will-change: transform;
+        }
+        .sheet-handle-wrap {
+          display: flex; justify-content: center; align-items: center;
+          padding: 10px 0 6px;
+          flex-shrink: 0;
+          cursor: grab;
+        }
+        .sheet-handle-wrap:active { cursor: grabbing; }
+        .sheet-handle {
+          width: 44px; height: 4px; border-radius: 2px;
+          background: rgba(255,255,255,0.28);
+        }
+        .sheet-body {
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          padding: 4px 20px 32px;
+          touch-action: pan-y;
+        }
+        .sheet-body .section:first-child { padding-top: 8px; }
       `}</style>
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
@@ -603,65 +740,59 @@ export default function ChladniParticleGhost() {
           </div>
         </div>
 
-        <div id="sidebar">
-          {/* Source */}
-          <div className="section">
-            <div className="section-title">Source</div>
-            <button
-              className={'source-btn' + (isMicActive ? ' active' : '')}
-              onClick={isMicActive ? stopMic : startMic}
-            >
-              <span className="dot" />
-              {isMicActive ? 'mic active — click to stop' : 'use microphone'}
-            </button>
-            {isMicActive && (
-              <div className="sensitivity-row">
-                <label>sensitivity</label>
-                <input
-                  type="range" min={0.2} max={4} step={0.1} defaultValue={1}
-                  onChange={e => { s.current.micSensitivity = +e.target.value; }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Wave */}
-          <div className="section">
-            <div className="section-title">Wave</div>
-            <Slider id="m"      label="Mode m"         min={1}    max={10}  step={1}    def={INITIAL.m}      fmt={v => v}               modKey="m" />
-            <Slider id="n"      label="Mode n"         min={1}    max={10}  step={1}    def={INITIAL.n}      fmt={v => v}               modKey="n" />
-            <Slider id="str"    label="Warp strength"  min={0}    max={80}  step={1}    def={INITIAL.str}    fmt={v => v}               modKey="str" />
-            <Slider id="thresh" label="Node threshold" min={0.01} max={0.4} step={0.01} def={INITIAL.thresh} fmt={v => (+v).toFixed(2)} modKey="thresh" />
-            <div className="presets">
-              {[[2,3],[3,4],[3,5],[4,5],[5,7],[6,7],[7,9]].map(([mv,nv]) => (
-                <button key={`${mv},${nv}`} onClick={() => preset(mv, nv)}>{mv},{nv}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Particles */}
-          <div className="section">
-            <div className="section-title">Particles</div>
-            <Slider id="grid"   label="Grid size"        min={2}   max={12} step={1}    def={INITIAL.grid}   fmt={v => v + 'px'} />
-            <Slider id="ps"     label="Base size"        min={0.5} max={4}  step={0.1}  def={INITIAL.ps}     fmt={v => (+v).toFixed(1)}        modKey="ps" />
-            <Slider id="amp"    label="Anim amplitude"   min={0}   max={2}  step={0.05} def={INITIAL.amp}    fmt={v => (+v).toFixed(2)}        modKey="amp" />
-            <Slider id="spd"    label="Anim speed"       min={0.1} max={3}  step={0.05} def={INITIAL.spd}    fmt={v => (+v).toFixed(2)}        modKey="spd" />
-            <Slider id="wscale" label="Wave scale"       min={0.5} max={6}  step={0.1}  def={INITIAL.wscale} fmt={v => (+v).toFixed(1)}        modKey="wscale" />
-            <Slider id="boost"  label="Brightness boost" min={1}   max={3}  step={0.05} def={INITIAL.boost}  fmt={v => (+v).toFixed(2) + 'x'} modKey="boost" />
-            <Slider id="partop" label="Particle opacity" min={0.1} max={1}  step={0.01} def={INITIAL.partop} fmt={v => (+v).toFixed(2)}        modKey="partop" />
-          </div>
-
-          {/* Compositing */}
-          <div className="section">
-            <div className="section-title">Compositing</div>
-            <Slider id="imgop" label="Image opacity" min={0} max={1} step={0.01} def={INITIAL.imgop} fmt={v => (+v).toFixed(2)} redraw />
-            <Slider id="desat" label="Desaturate"    min={0} max={1} step={0.01} def={INITIAL.desat} fmt={v => (+v).toFixed(2)} redraw />
-            <Slider id="dark"  label="Darken"        min={0} max={1} step={0.01} def={INITIAL.dark}  fmt={v => (+v).toFixed(2)} redraw />
-          </div>
-
-          <div id="status" ref={statusRef} />
-        </div>
+        {!isMobile && (
+          <div id="sidebar">{renderControls()}</div>
+        )}
       </div>
+
+      {/* Mobile: floating button + draggable bottom sheet */}
+      {isMobile && (
+        <>
+          <button className="sheet-fab" onClick={() => setSheetOpen(true)} aria-label="open controls">
+            <span className="fab-icon">
+              <span /><span /><span />
+            </span>
+            controls
+          </button>
+
+          <AnimatePresence>
+            {sheetOpen && (
+              <>
+                <motion.div
+                  key="backdrop"
+                  className="sheet-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => setSheetOpen(false)}
+                />
+                <motion.div
+                  key="sheet"
+                  className="mobile-sheet"
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ type: 'spring', damping: 32, stiffness: 340 }}
+                  drag="y"
+                  dragConstraints={{ top: 0, bottom: 0 }}
+                  dragElastic={{ top: 0, bottom: 0.3 }}
+                  onDragEnd={(_, info) => {
+                    if (info.offset.y > 120 || info.velocity.y > 500) setSheetOpen(false);
+                  }}
+                >
+                  <div className="sheet-handle-wrap">
+                    <div className="sheet-handle" />
+                  </div>
+                  <div className="sheet-body">
+                    {renderControls()}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </>
+      )}
     </>
   );
 }
