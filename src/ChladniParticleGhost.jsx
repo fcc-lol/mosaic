@@ -521,6 +521,7 @@ export default function ChladniParticleGhost() {
           position: relative; display: flex; align-items: center;
           justify-content: center; padding: 24px; overflow: hidden;
           min-height: 240px;
+          container-type: size;
         }
         #drop-zone {
           width: 100%; max-width: 440px; padding: 28px 24px;
@@ -553,8 +554,11 @@ export default function ChladniParticleGhost() {
         #canvas-wrap {
           position: relative; border-radius: var(--radius-lg); overflow: hidden;
           background: #000; display: none;
-          width: 100%; max-width: 600px; aspect-ratio: 1 / 1;
-          transition: max-width .35s cubic-bezier(.2,.8,.2,1);
+          aspect-ratio: 1 / 1;
+          width:  min(100cqw, 100cqh);
+          height: min(100cqw, 100cqh);
+          transition: width .35s cubic-bezier(.2,.8,.2,1),
+                      height .35s cubic-bezier(.2,.8,.2,1);
         }
         #canvas-wrap.visible { display: block; }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
@@ -657,13 +661,17 @@ export default function ChladniParticleGhost() {
             margin: 4px 0;
           }
           /* When the mobile sheet is open, shrink the canvas area so the
-             image is fully visible above the sheet (sheet = 60vh, canvas = 40vh). */
+             image is fully visible above the sheet (sheet = 60dvh, canvas = 40dvh). */
+          .chladni-root.sheet-open {
+            grid-template-rows: 40dvh;
+            height: 40dvh;
+            min-height: 0;
+          }
           .chladni-root.sheet-open #canvas-area {
             padding: 8px;
-            max-height: 40vh;
-          }
-          .chladni-root.sheet-open #canvas-wrap {
-            max-width: calc(40vh - 16px);
+            height: 40dvh;
+            max-height: 40dvh;
+            min-height: 0;
           }
           .chladni-root.sheet-open header {
             display: none;
@@ -699,8 +707,8 @@ export default function ChladniParticleGhost() {
         }
         .mobile-sheet {
           position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-          height: 60vh;
-          max-height: 60vh;
+          height: 60dvh;
+          max-height: 60dvh;
           background: var(--bg-primary, #0c0c0c);
           border-top: 0.5px solid var(--border-strong);
           border-top-left-radius: 20px;
