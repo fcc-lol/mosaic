@@ -1,0 +1,10 @@
+{
+  "app_id": "mosaic",
+  "app_name": "Mosaic",
+  "domain": "https://mosaic.fcc.lol",
+  "host": "localhost",
+  "port": "3111",
+  "author": "fcc",
+  "anthropic": true,
+  "created_on": "Thu Apr  9 00:00:26 UTC 2026"
+}
