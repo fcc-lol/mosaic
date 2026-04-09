@@ -17,14 +17,15 @@ const MOD_RANGE = {
 };
 
 export default function ChladniParticleGhost() {
-  const bgCanvasRef   = useRef(null);
-  const ptCanvasRef   = useRef(null);
-  const canvasWrapRef = useRef(null);
-  const dropZoneRef   = useRef(null);
-  const statusRef     = useRef(null);
-  const videoRef      = useRef(null);
-  const cameraTmpRef  = useRef(null);
-  const audioDataRef  = useRef(null); // cached Uint8Array for analyser reads
+  const bgCanvasRef      = useRef(null);
+  const ptCanvasRef      = useRef(null);
+  const canvasWrapRef    = useRef(null);
+  const dropZoneRef      = useRef(null);
+  const statusRef        = useRef(null);
+  const videoRef         = useRef(null);
+  const cameraTmpRef     = useRef(null);
+  const sheetFileInputRef = useRef(null);
+  const audioDataRef     = useRef(null); // cached Uint8Array for analyser reads
 
   // All animation-loop mutable state — never causes re-renders.
   const s = useRef({
@@ -32,6 +33,8 @@ export default function ChladniParticleGhost() {
     animId: null, startTime: null,
     srcPixels: null, bgImageData: null,
     cameraMode: false, cameraStream: null,
+    facingMode: 'environment',
+    captured: false,
     micMode: false, analyser: null, audioStream: null, audioCtx: null,
     audioLevel: 0, micSensitivity: 1.0,
     micMod: Object.fromEntries(Object.keys(MOD_RANGE).map(k => [k, false])),
@@ -42,10 +45,15 @@ export default function ChladniParticleGhost() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMicActive,    setIsMicActive]    = useState(false);
   const [micModParams,   setMicModParams]   = useState(new Set());
+  const [facingMode,     setFacingMode]     = useState('environment');
+  const [isCaptured,     setIsCaptured]     = useState(false);
   const [isMobile,       setIsMobile]       = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches
   );
-  const [sheetOpen,      setSheetOpen]      = useState(false);
+  // Sheet is open by default on mobile so controls are immediately accessible.
+  const [sheetOpen,      setSheetOpen]      = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches
+  );
   const dispRefs = useRef({});
 
   useEffect(() => {
@@ -166,8 +174,8 @@ export default function ChladniParticleGhost() {
     if (!ptX) return;
     const gs = 3;
 
-    // ── camera: pull new frame from video (center-cropped + mirrored) ─────
-    if (st.cameraMode) {
+    // ── camera: pull new frame from video (center-cropped, mirrored if front) ─────
+    if (st.cameraMode && !st.captured) {
       const video = videoRef.current;
       const tmp   = cameraTmpRef.current;
       if (video && tmp && video.readyState >= 2 && video.videoWidth > 0) {
@@ -177,8 +185,11 @@ export default function ChladniParticleGhost() {
         const sy = (vh - sSize) / 2;
         const tmpCtx = tmp.getContext('2d');
         tmpCtx.save();
-        tmpCtx.translate(W, 0);
-        tmpCtx.scale(-1, 1);
+        if (st.facingMode === 'user') {
+          // Mirror only for front-facing camera (selfie view).
+          tmpCtx.translate(W, 0);
+          tmpCtx.scale(-1, 1);
+        }
         tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, W, H);
         tmpCtx.restore();
         const imageData = tmpCtx.getImageData(0, 0, W, H);
@@ -269,6 +280,7 @@ export default function ChladniParticleGhost() {
     const st = s.current;
     if (st.cameraStream) { st.cameraStream.getTracks().forEach(t => t.stop()); st.cameraStream = null; }
     st.cameraMode = false;
+    st.captured   = false;
     if (videoRef.current) videoRef.current.srcObject = null;
     if (dropZoneRef.current) dropZoneRef.current.style.display = '';
     if (canvasWrapRef.current) canvasWrapRef.current.classList.remove('visible');
@@ -276,26 +288,30 @@ export default function ChladniParticleGhost() {
     st.particles = []; st.srcPixels = null; st.bgImageData = null;
     if (statusRef.current) statusRef.current.textContent = '';
     setIsCameraActive(false);
+    setIsCaptured(false);
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (requestedFacing) => {
     try {
-      // Prefer the back-facing camera on mobile; desktop will just ignore this hint.
-      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      const facing = requestedFacing || s.current.facingMode || 'environment';
       const videoConstraints = {
         width:  { ideal: 1280 },
         height: { ideal: 720 },
-        ...(isMobile ? { facingMode: { ideal: 'environment' } } : {}),
+        facingMode: { ideal: facing },
       };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       s.current.cameraStream = stream;
       s.current.cameraMode   = true;
+      s.current.facingMode   = facing;
+      s.current.captured     = false;
+      setFacingMode(facing);
       setIsCameraActive(true);
+      setIsCaptured(false);
       const video = videoRef.current;
       video.srcObject = stream;
       video.onloadedmetadata = () => {
         video.play();
-        // Canvas is always square. The frame loop center-crops and mirrors.
+        // Canvas is always square. The frame loop center-crops (and mirrors if front).
         if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
         cameraTmpRef.current.width  = CANVAS_SIZE;
         cameraTmpRef.current.height = CANVAS_SIZE;
@@ -308,8 +324,10 @@ export default function ChladniParticleGhost() {
           const sy = (vh - sSize) / 2;
           const tmpCtx = cameraTmpRef.current.getContext('2d');
           tmpCtx.save();
-          tmpCtx.translate(CANVAS_SIZE, 0);
-          tmpCtx.scale(-1, 1);
+          if (s.current.facingMode === 'user') {
+            tmpCtx.translate(CANVAS_SIZE, 0);
+            tmpCtx.scale(-1, 1);
+          }
           tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
           tmpCtx.restore();
           const imageData = tmpCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
@@ -322,6 +340,73 @@ export default function ChladniParticleGhost() {
       if (statusRef.current) statusRef.current.textContent = 'Camera access denied';
     }
   }, [setupCanvas, sampleParticles, drawBg, startAnim]);
+
+  const toggleFacingMode = useCallback(async () => {
+    const st = s.current;
+    const next = st.facingMode === 'user' ? 'environment' : 'user';
+    // Stop the existing stream without tearing down the canvas/particles so
+    // the swap feels seamless.
+    if (st.cameraStream) { st.cameraStream.getTracks().forEach(t => t.stop()); st.cameraStream = null; }
+    st.captured = false;
+    setIsCaptured(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width:  { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: { ideal: next },
+        },
+      });
+      st.cameraStream = stream;
+      st.facingMode   = next;
+      setFacingMode(next);
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.play();
+    } catch {
+      if (statusRef.current) statusRef.current.textContent = 'Camera access denied';
+    }
+  }, []);
+
+  // ── capture / clear / save ──────────────────────────────────────────────
+
+  const captureImage = useCallback(() => {
+    // Freeze the current camera frame as the Chladni source. The animation loop
+    // keeps running over the frozen background.
+    s.current.captured = true;
+    setIsCaptured(true);
+  }, []);
+
+  const clearCapture = useCallback(() => {
+    s.current.captured = false;
+    setIsCaptured(false);
+  }, []);
+
+  const savePhoto = useCallback(() => {
+    const bg = bgCanvasRef.current, pt = ptCanvasRef.current;
+    if (!bg || !pt) return;
+    // Composite bg + particles into a single canvas, then download.
+    const out = document.createElement('canvas');
+    out.width  = bg.width;
+    out.height = bg.height;
+    const octx = out.getContext('2d');
+    octx.fillStyle = '#000';
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.drawImage(bg, 0, 0);
+    octx.drawImage(pt, 0, 0);
+    out.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = `chladni-${ts}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  }, []);
 
   // ── microphone ───────────────────────────────────────────────────────────
 
@@ -428,8 +513,61 @@ export default function ChladniParticleGhost() {
       {/* Source */}
       <div className="section">
         <div className="section-title">Source</div>
+
+        <div className="source-grid">
+          {!isCameraActive ? (
+            <>
+              <button
+                className="chunk-btn primary"
+                onClick={() => startCamera('environment')}
+              >
+                Start camera
+              </button>
+              <button
+                className="chunk-btn"
+                onClick={() => sheetFileInputRef.current?.click()}
+              >
+                Upload photo
+              </button>
+            </>
+          ) : (
+            <>
+              {!isCaptured ? (
+                <button className="chunk-btn primary" onClick={captureImage}>
+                  Capture
+                </button>
+              ) : (
+                <>
+                  <button className="chunk-btn primary" onClick={savePhoto}>
+                    Save to photos
+                  </button>
+                  <button className="chunk-btn" onClick={clearCapture}>
+                    Clear
+                  </button>
+                </>
+              )}
+              {!isCaptured && (
+                <button className="chunk-btn" onClick={toggleFacingMode}>
+                  {facingMode === 'user' ? 'Use back camera' : 'Use front camera'}
+                </button>
+              )}
+              <button className="chunk-btn danger" onClick={stopCamera}>
+                Stop camera
+              </button>
+            </>
+          )}
+        </div>
+
+        <input
+          type="file"
+          accept="image/*"
+          ref={sheetFileInputRef}
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+
         <button
-          className={'source-btn' + (isMicActive ? ' active' : '')}
+          className={'source-btn mic-btn' + (isMicActive ? ' active' : '')}
           onClick={isMicActive ? stopMic : startMic}
         >
           <span className="dot" />
@@ -628,6 +766,48 @@ export default function ChladniParticleGhost() {
         .source-btn:hover  { background: rgba(255,255,255,0.04); color: var(--text-primary); }
         .source-btn.active { border-color: var(--accent); color: var(--accent); }
         .source-btn .dot   { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+        .mic-btn { margin-top: 12px; }
+
+        /* Chunky native-feeling action buttons (used in source grid) */
+        .source-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          width: 100%;
+        }
+        .chunk-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 100%;
+          font-family: var(--font-sans);
+          font-size: 15px;
+          font-weight: 500;
+          padding: 14px 16px;
+          min-height: 48px;
+          background: rgba(255,255,255,0.06);
+          border: 0.5px solid var(--border-strong);
+          border-radius: 12px;
+          color: var(--text-primary);
+          cursor: pointer;
+          user-select: none;
+          -webkit-tap-highlight-color: transparent;
+          transition: background .15s, transform .1s, border-color .15s;
+        }
+        .chunk-btn:hover  { background: rgba(255,255,255,0.1); }
+        .chunk-btn:active { transform: scale(0.97); background: rgba(255,255,255,0.14); }
+        .chunk-btn.primary {
+          background: var(--accent);
+          color: #0c0c0c;
+          border-color: var(--accent);
+          grid-column: 1 / -1;
+        }
+        .chunk-btn.primary:hover  { background: #d8d0b8; }
+        .chunk-btn.primary:active { background: #b8b098; }
+        .chunk-btn.danger {
+          color: #f0b0a0;
+          border-color: rgba(240,176,160,0.35);
+          grid-column: 1 / -1;
+        }
+        .chunk-btn.danger:hover { background: rgba(240,120,100,0.12); }
         .sensitivity-row   { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
         .sensitivity-row label { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; width: 80px; }
         .sensitivity-row input[type=range] {
@@ -642,39 +822,78 @@ export default function ChladniParticleGhost() {
         @media (max-width: 820px) {
           .chladni-root {
             grid-template-columns: 1fr;
-            grid-template-rows: auto 1fr;
-            min-height: 100vh;
-            transition: grid-template-rows .35s cubic-bezier(.2,.8,.2,1);
+            /* Canvas takes the top 50dvh; the fixed-position sheet covers the
+               bottom 50dvh. No header on mobile. */
+            grid-template-rows: 50dvh;
+            height: 50dvh;
+            min-height: 0;
           }
-          .chladni-root header { grid-column: 1; padding: 16px 20px; }
+          /* Header is removed entirely on mobile. */
+          .chladni-root header { display: none; }
           #canvas-area {
-            padding: 16px 16px 96px;
-            min-height: 200px;
-            transition: padding .35s cubic-bezier(.2,.8,.2,1),
-                        max-height .35s cubic-bezier(.2,.8,.2,1);
-          }
-          .ctrl label { width: 108px; font-size: 12px; }
-          .ctrl .val  { width: 42px; }
-          .dz-options-row { flex-direction: column; }
-          .dz-divider {
-            width: 100%; height: 1px;
-            margin: 4px 0;
-          }
-          /* When the mobile sheet is open, shrink the canvas area so the
-             image is fully visible above the sheet (sheet = 60dvh, canvas = 40dvh). */
-          .chladni-root.sheet-open {
-            grid-template-rows: 40dvh;
-            height: 40dvh;
-            min-height: 0;
-          }
-          .chladni-root.sheet-open #canvas-area {
             padding: 8px;
-            height: 40dvh;
-            max-height: 40dvh;
+            height: 50dvh;
+            max-height: 50dvh;
             min-height: 0;
           }
-          .chladni-root.sheet-open header {
-            display: none;
+          /* The drop-zone is redundant on mobile — photo/camera controls live
+             in the sheet. */
+          #drop-zone { display: none !important; }
+
+          /* Chunky native-feeling sliders and controls inside the sheet. */
+          .sheet-body .ctrl {
+            gap: 14px;
+            margin: 18px 0;
+          }
+          .sheet-body .ctrl label {
+            width: 120px;
+            font-size: 14px;
+            color: var(--text-primary);
+          }
+          .sheet-body .ctrl .val {
+            width: 52px;
+            font-size: 14px;
+          }
+          .sheet-body .ctrl input[type=range],
+          .sheet-body .sensitivity-row input[type=range] {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.18);
+          }
+          .sheet-body .ctrl input[type=range]::-webkit-slider-thumb,
+          .sheet-body .sensitivity-row input[type=range]::-webkit-slider-thumb {
+            width: 26px; height: 26px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+          }
+          .sheet-body .ctrl input[type=range]::-moz-range-thumb,
+          .sheet-body .sensitivity-row input[type=range]::-moz-range-thumb {
+            width: 26px; height: 26px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+          }
+          .sheet-body .mod-check {
+            width: 24px; height: 24px;
+            border-radius: 6px;
+          }
+          .sheet-body .mod-check:checked::after {
+            left: 8px; top: 3px; width: 6px; height: 12px;
+            border-width: 0 3px 3px 0;
+          }
+          .sheet-body .presets {
+            gap: 8px;
+            margin-top: 14px;
+          }
+          .sheet-body .presets button {
+            font-size: 14px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            min-height: 40px;
+          }
+          .sheet-body .section-title {
+            font-size: 12px;
+            margin-bottom: 16px;
+          }
+          .sheet-body .section {
+            padding: 22px 0;
           }
         }
         /* Lock background scroll while sheet is open */
@@ -707,8 +926,8 @@ export default function ChladniParticleGhost() {
         }
         .mobile-sheet {
           position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-          height: 60dvh;
-          max-height: 60dvh;
+          height: 50dvh;
+          max-height: 50dvh;
           background: var(--bg-primary, #0c0c0c);
           border-top: 0.5px solid var(--border-strong);
           border-top-left-radius: 20px;
@@ -758,14 +977,14 @@ export default function ChladniParticleGhost() {
                 <div className="dz-sub">or click to browse</div>
               </div>
               <div className="dz-divider" />
-              <div className="dz-option" onClick={startCamera}>
+              <div className="dz-option" onClick={() => startCamera('environment')}>
                 <div className="dz-title">Use Camera</div>
                 <div className="dz-sub">live video feed</div>
               </div>
             </div>
           </div>
 
-          {isCameraActive && (
+          {isCameraActive && !isMobile && (
             <button id="stop-camera-btn" onClick={stopCamera}>stop camera</button>
           )}
 
