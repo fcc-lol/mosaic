@@ -818,7 +818,6 @@ export default function ChladniParticleGhost() {
             min-height: 0;
             overflow-y: auto;
             padding: 22px 20px 28px;
-            margin-top: -14px;
             /* Slightly translucent so the blurred camera bg shows through. */
             background: rgba(22, 22, 22, 0.78);
             border-top-left-radius: var(--radius-lg);
