@@ -596,12 +596,11 @@ export default function ChladniParticleGhost() {
             {isCaptured && (
               <motion.button
                 key="clear"
-                layout
                 className="chunk-btn clear-btn"
-                initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
-                exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15, delay: 0.15 }}
                 onClick={clearCapture}
               >
                 Clear
@@ -609,20 +608,31 @@ export default function ChladniParticleGhost() {
             )}
           </AnimatePresence>
 
-          {isCameraActive && !isCaptured && (
-            <button
-              className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
-              disabled={!isMicActive}
-              onClick={toggleWaveMod}
-              title="Modulate wave params with mic"
-              aria-label="Modulate wave params with mic"
-            >
-              <FontAwesomeIcon
-                icon={waveModActive ? faMicrophone : faMicrophoneSlash}
-                style={{ fontSize: 18 }}
-              />
-            </button>
-          )}
+          <AnimatePresence mode="popLayout">
+            {isCameraActive && !isCaptured && (
+              <motion.button
+                key="mic"
+                layout
+                className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
+                disabled={!isMicActive}
+                onClick={toggleWaveMod}
+                title="Modulate wave params with mic"
+                aria-label="Modulate wave params with mic"
+                variants={{
+                  show: { opacity: 1, transition: { type: 'spring', damping: 26, stiffness: 280 } },
+                  hide: { opacity: 0, transition: { duration: 0.15 } },
+                }}
+                initial="hide"
+                animate="show"
+                exit="hide"
+              >
+                <FontAwesomeIcon
+                  icon={waveModActive ? faMicrophone : faMicrophoneSlash}
+                  style={{ fontSize: 18 }}
+                />
+              </motion.button>
+            )}
+          </AnimatePresence>
 
           <motion.button
             layout
@@ -637,15 +647,18 @@ export default function ChladniParticleGhost() {
             {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
           </motion.button>
 
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {isCameraActive && !isCaptured && (
               <motion.button
                 key="swap"
                 className="icon-btn swap-btn"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                variants={{
+                  show: { opacity: 1, transition: { duration: 0.15 } },
+                  hide: { opacity: 0, transition: { duration: 0.15 } },
+                }}
+                initial="hide"
+                animate="show"
+                exit="hide"
                 onClick={toggleFacingMode}
                 title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
                 aria-label="swap camera"
