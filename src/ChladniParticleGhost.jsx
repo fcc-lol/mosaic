@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMicrophone, faMicrophoneSlash, faCameraRotate } from '@fortawesome/free-solid-svg-icons';
 
 const INITIAL = {
   m: 3, n: 4, conv: 0.8, sprd: 0.8,
@@ -61,7 +63,7 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
           cx={PAD + xi * CELL + CELL / 2}
           cy={PAD + yi * CELL + CELL / 2}
           r={1.5 + 4.5 * t}
-          fill="white"
+          fill="var(--accent)"
           fillOpacity={0.1 + 0.9 * t}
         />
       );
@@ -75,8 +77,8 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
       width="100%"
       onClick={e => fireSelect(e.currentTarget, e.clientX, e.clientY)}
       onMouseMove={e => { if (e.buttons) fireSelect(e.currentTarget, e.clientX, e.clientY); }}
-      onTouchStart={e => { e.preventDefault(); const t = e.touches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
-      onTouchMove={e => { e.preventDefault(); const t = e.touches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
+      onTouchStart={e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
+      onTouchMove={e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
     >
       {dots}
     </svg>
@@ -414,6 +416,9 @@ export default function ChladniParticleGhost() {
     // keeps running over the frozen background.
     s.current.captured = true;
     setIsCaptured(true);
+    // Stop mic modulation when frozen.
+    ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = false; });
+    setWaveModActive(false);
   }, []);
 
   const clearCapture = useCallback(() => {
@@ -572,45 +577,53 @@ export default function ChladniParticleGhost() {
         />
       </div>
 
-      <div className="camera-block">
-        <div className="camera-main">
-          <LayoutGroup>
-            <div className="action-row">
-              <AnimatePresence mode="popLayout">
-                {isCaptured && (
-                  <motion.button
-                    key="clear"
-                    layout
-                    className="chunk-btn clear-btn"
-                    initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                    animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
-                    exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
-                    transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                    onClick={clearCapture}
-                  >
-                    Clear
-                  </motion.button>
-                )}
-              </AnimatePresence>
-
+      <LayoutGroup>
+        <div className="action-row">
+          <AnimatePresence mode="popLayout">
+            {isCaptured && (
               <motion.button
+                key="clear"
                 layout
-                className="chunk-btn primary main-action"
-                onClick={
-                  !isCameraActive
-                    ? () => startCameraAndMic(s.current.facingMode || 'environment')
-                    : (isCaptured ? savePhoto : captureImage)
-                }
+                className="chunk-btn clear-btn"
+                initial={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
+                animate={{ opacity: 1, flexGrow: 1, paddingLeft: 18, paddingRight: 18 }}
+                exit={{ opacity: 0, flexGrow: 0, paddingLeft: 0, paddingRight: 0 }}
                 transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={clearCapture}
               >
-                {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
+                Clear
               </motion.button>
-            </div>
-          </LayoutGroup>
+            )}
+          </AnimatePresence>
 
-        </div>
+          {isCameraActive && !isCaptured && (
+            <button
+              className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
+              disabled={!isMicActive}
+              onClick={toggleWaveMod}
+              title="Modulate wave params with mic"
+              aria-label="Modulate wave params with mic"
+            >
+              <FontAwesomeIcon
+                icon={waveModActive ? faMicrophone : faMicrophoneSlash}
+                style={{ fontSize: 18 }}
+              />
+            </button>
+          )}
 
-        <div className="camera-side">
+          <motion.button
+            layout
+            className="chunk-btn primary main-action"
+            onClick={
+              !isCameraActive
+                ? () => startCameraAndMic(s.current.facingMode || 'environment')
+                : (isCaptured ? savePhoto : captureImage)
+            }
+            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+          >
+            {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
+          </motion.button>
+
           <AnimatePresence>
             {isCameraActive && !isCaptured && (
               <motion.button
@@ -624,31 +637,12 @@ export default function ChladniParticleGhost() {
                 title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
                 aria-label="swap camera"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 2l4 4-4 4" />
-                  <path d="M3 12V10a4 4 0 0 1 4-4h14" />
-                  <path d="M7 22l-4-4 4-4" />
-                  <path d="M21 12v2a4 4 0 0 1-4 4H3" />
-                </svg>
+                <FontAwesomeIcon icon={faCameraRotate} style={{ fontSize: 18 }} />
               </motion.button>
             )}
           </AnimatePresence>
-
-          <button
-            className={'icon-btn mic-toggle' + (waveModActive ? ' active' : '')}
-            disabled={!isMicActive}
-            onClick={toggleWaveMod}
-            title="Modulate wave params with mic"
-            aria-label="Modulate wave params with mic"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="2" width="6" height="12" rx="3" />
-              <path d="M5 11a7 7 0 0 0 14 0" />
-              <line x1="12" y1="18" x2="12" y2="22" />
-            </svg>
-          </button>
         </div>
-      </div>
+      </LayoutGroup>
     </>
   );
 
@@ -692,15 +686,16 @@ export default function ChladniParticleGhost() {
         #canvas-area {
           position: relative; flex: 1 1 0; min-height: 0;
           display: flex; align-items: center; justify-content: center;
-          padding: 16px; overflow: hidden;
+          padding: 24px; overflow: hidden;
         }
         #canvas-wrap {
-          position: relative; border-radius: var(--radius-lg); overflow: hidden;
-          background: #000; display: block;
+          position: relative; border-radius: 16px; overflow: hidden;
+          background: transparent; display: block;
+          border: 1px solid rgba(255,255,255,0.05);
           aspect-ratio: 1 / 1;
           height: 100%; width: auto;
           max-width: 100%; max-height: 100%;
-          border: 0.5px solid var(--border);
+          box-shadow: 0 24px 80px rgba(0,0,0,0.7);
         }
         #controls {
           flex-shrink: 0;
@@ -765,10 +760,6 @@ export default function ChladniParticleGhost() {
         .mod-mic { display: block; opacity: 0.75; }
 
         /* Source area: main action + optional swap/clear + indicators */
-        .source-grid { display: flex; flex-direction: column; gap: 12px; width: 100%; }
-        .camera-block { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
-        .camera-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-        .camera-side { flex-shrink: 0; width: 48px; display: flex; flex-direction: column; gap: 8px; }
         .action-row  { display: flex; align-items: stretch; gap: 10px; width: 100%; }
         .chunk-btn {
           display: flex; align-items: center; justify-content: center;
@@ -777,11 +768,11 @@ export default function ChladniParticleGhost() {
           font-family: var(--font-sans);
           font-size: 15px;
           font-weight: 500;
-          padding: 14px 18px;
-          min-height: 48px;
+          padding: 18px 18px;
+          min-height: 56px;
           background: rgba(255,255,255,0.06);
           border: 0.5px solid var(--border-strong);
-          border-radius: 12px;
+          border-radius: 16px;
           color: var(--text-primary);
           cursor: pointer;
           user-select: none;
@@ -808,11 +799,11 @@ export default function ChladniParticleGhost() {
         .icon-btn {
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0;
-          height: 48px;
+          width: 56px; height: 56px;
           padding: 0;
           background: rgba(255,255,255,0.06);
           border: 0.5px solid var(--border-strong);
-          border-radius: 12px;
+          border-radius: 16px;
           color: var(--text-primary);
           cursor: pointer;
           overflow: hidden;
@@ -821,10 +812,10 @@ export default function ChladniParticleGhost() {
         }
         .icon-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent); }
         .icon-btn svg   { flex-shrink: 0; }
-        .mic-toggle { background: transparent; }
-        .mic-toggle:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
-        .mic-toggle.active { color: var(--accent); }
-        .mic-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
+        .mic-toggle { color: var(--accent); }
+        .mic-toggle.mic-on { color: #d97a5a; }
+        .mic-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+        .swap-btn { color: var(--accent); }
 
         /* Indicators row — camera indicator only, aligned under capture button */
         .indicators-row { display: flex; gap: 8px; width: 100%; }
@@ -875,31 +866,24 @@ export default function ChladniParticleGhost() {
           }
           #canvas-area {
             flex: 0 0 auto;
-            padding: 0;
-            width: 100vw;
-            aspect-ratio: 1 / 1;
-            max-height: 50dvh;
-            overflow: hidden;
+            padding: 24px 24px 12px;
+            width: 100%;
+            overflow: visible;
           }
           #canvas-wrap {
             width: 100%;
-            height: 100%;
+            height: auto;
             max-width: none;
-            max-height: none;
-            border-radius: 0;
-            border: none;
+            max-height: 50dvh;
+            border-radius: 16px;
             aspect-ratio: 1 / 1;
           }
           #controls {
             flex: 1 1 0;
             min-height: 0;
             overflow-y: auto;
-            padding: 14px 20px 16px;
-            /* Slightly translucent so the blurred camera bg shows through. */
-            background: rgba(22, 22, 22, 0.78);
-            border-top-left-radius: var(--radius-lg);
-            border-top-right-radius: var(--radius-lg);
-            border-top: 0.5px solid var(--border);
+            padding: 14px 24px 16px;
+            background: transparent;
             position: relative;
             z-index: 1;
           }
@@ -930,9 +914,9 @@ export default function ChladniParticleGhost() {
           .ctrl .mod-wrap { grid-area: mod; font-size: 0; }
         }
         /* Matrix controllers */
-        .matrices-row { display: flex; gap: 14px; margin-bottom: 10px; }
+        .matrices-row { display: flex; gap: 10px; margin-bottom: 10px; }
         .matrix-svg {
-          display: block; border-radius: 10px;
+          display: block; border-radius: 16px;
           background: rgba(255,255,255,0.04);
           border: 0.5px solid rgba(255,255,255,0.08);
           cursor: crosshair;
