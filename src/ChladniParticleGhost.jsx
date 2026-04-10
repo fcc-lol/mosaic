@@ -418,8 +418,8 @@ export default function ChladniParticleGhost() {
     // Bake the exact param values from the last rendered frame so the animation
     // stays at precisely what the user saw when they pressed Capture.
     if (st.lastEffective) {
-      st.m    = Math.round(st.lastEffective.m);
-      st.n    = Math.round(st.lastEffective.n);
+      st.m    = st.lastEffective.m;
+      st.n    = st.lastEffective.n;
       st.conv = st.lastEffective.conv;
       st.sprd = st.lastEffective.sprd;
     }
