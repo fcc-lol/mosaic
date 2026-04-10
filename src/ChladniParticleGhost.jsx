@@ -751,7 +751,7 @@ export default function ChladniParticleGhost() {
         #controls {
           flex-shrink: 0;
           padding: 0 24px 24px;
-          display: flex; flex-direction: column;
+          display: flex; flex-direction: column; justify-content: center;
         }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
         #c-particles { position: relative; }
