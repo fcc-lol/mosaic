@@ -421,10 +421,18 @@ export default function ChladniParticleGhost() {
     setWaveModActive(false);
   }, []);
 
+  const restoreMic = useCallback(() => {
+    if (s.current.micMode) {
+      ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = true; });
+      setWaveModActive(true);
+    }
+  }, []);
+
   const clearCapture = useCallback(() => {
     s.current.captured = false;
     setIsCaptured(false);
-  }, []);
+    restoreMic();
+  }, [restoreMic]);
 
   const savePhoto = useCallback(() => {
     const pt = ptCanvasRef.current;
@@ -449,7 +457,10 @@ export default function ChladniParticleGhost() {
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }, 'image/png');
-  }, []);
+    s.current.captured = false;
+    setIsCaptured(false);
+    restoreMic();
+  }, [restoreMic]);
 
   // ── microphone ───────────────────────────────────────────────────────────
 
