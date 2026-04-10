@@ -36,6 +36,9 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
   const selX = Math.max(0, xValues.findIndex(v => Math.abs(v - xVal) < 1e-9));
   const selY = Math.max(0, yValues.findIndex(v => Math.abs(v - yVal) < 1e-9));
   const sig  = (Math.max(cols, rows) - 1) * 0.35;
+  const svgRef = React.useRef(null);
+  const onSelectRef = React.useRef(onSelect);
+  React.useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
 
   const coordsToCell = (el, clientX, clientY) => {
     const rect = el.getBoundingClientRect();
@@ -49,8 +52,19 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
 
   const fireSelect = (el, clientX, clientY) => {
     const [xi, yi] = coordsToCell(el, clientX, clientY);
-    onSelect(xValues[xi], yValues[yi]);
+    onSelectRef.current(xValues[xi], yValues[yi]);
   };
+
+  // Attach touch listeners as non-passive so preventDefault works (prevents scroll).
+  React.useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onStart = e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(el, t.clientX, t.clientY); };
+    const onMove  = e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(el, t.clientX, t.clientY); };
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchmove',  onMove,  { passive: false });
+    return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); };
+  }, [xValues, yValues]);  // re-bind if value arrays change
 
   const dots = [];
   for (let yi = 0; yi < rows; yi++) {
@@ -72,13 +86,12 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
 
   return (
     <svg
+      ref={svgRef}
       className="matrix-svg"
       viewBox={`0 0 ${vw} ${vh}`}
       width="100%"
       onClick={e => fireSelect(e.currentTarget, e.clientX, e.clientY)}
       onMouseMove={e => { if (e.buttons) fireSelect(e.currentTarget, e.clientX, e.clientY); }}
-      onTouchStart={e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
-      onTouchMove={e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(e.currentTarget, t.clientX, t.clientY); }}
     >
       {dots}
     </svg>
