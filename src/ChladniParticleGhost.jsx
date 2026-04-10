@@ -412,13 +412,23 @@ export default function ChladniParticleGhost() {
   // ── capture / clear / save ──────────────────────────────────────────────
 
   const captureImage = useCallback(() => {
-    // Freeze the current camera frame as the Chladni source. The animation loop
-    // keeps running over the frozen background.
-    s.current.captured = true;
+    const st = s.current;
+    // Bake the current mic-modulated param values into the base params so the
+    // animation continues at exactly the visual state the user saw at capture.
+    ['m', 'n', 'conv', 'sprd'].forEach(k => {
+      if (st.micMode && st.micMod[k]) {
+        const baked = Math.min(st[k] + st.audioLevel * MOD_RANGE[k], st[k] + MOD_RANGE[k]);
+        st[k] = (k === 'm' || k === 'n') ? Math.round(baked) : baked;
+      }
+      st.micMod[k] = false;
+    });
+    st.captured = true;
     setIsCaptured(true);
-    // Stop mic modulation when frozen.
-    ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = false; });
     setWaveModActive(false);
+    setMVal(st.m);
+    setNVal(st.n);
+    setConvVal(st.conv);
+    setSprdVal(st.sprd);
   }, []);
 
   const restoreMic = useCallback(() => {
