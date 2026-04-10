@@ -230,7 +230,7 @@ export default function ChladniParticleGhost() {
         const sSize = Math.min(vw, vh);
         const sx = (vw - sSize) / 2;
         const sy = (vh - sSize) / 2;
-        const tmpCtx = tmp.getContext('2d');
+        const tmpCtx = tmp.getContext('2d', { willReadFrequently: true });
         tmpCtx.save();
         if (st.facingMode === 'user') {
           // Mirror only for front-facing camera (selfie view).
@@ -379,7 +379,7 @@ export default function ChladniParticleGhost() {
           const sSize = Math.min(vw, vh);
           const sx = (vw - sSize) / 2;
           const sy = (vh - sSize) / 2;
-          const tmpCtx = cameraTmpRef.current.getContext('2d');
+          const tmpCtx = cameraTmpRef.current.getContext('2d', { willReadFrequently: true });
           tmpCtx.save();
           if (s.current.facingMode === 'user') {
             tmpCtx.translate(CANVAS_SIZE, 0);
