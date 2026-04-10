@@ -201,6 +201,8 @@ export default function ChladniParticleGhost() {
     const m = p('m'), n = p('n');
     const conv   = Math.max(0, Math.min(1, p('conv')));
     const spread = 4 + Math.max(0, Math.min(1, p('sprd'))) * 24;
+    // Save the exact effective values used this frame so captureImage can bake them precisely.
+    st.lastEffective = { m, n, conv: p('conv'), sprd: p('sprd') };
 
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (!ptX) return;
@@ -413,15 +415,15 @@ export default function ChladniParticleGhost() {
 
   const captureImage = useCallback(() => {
     const st = s.current;
-    // Bake the current mic-modulated param values into the base params so the
-    // animation continues at exactly the visual state the user saw at capture.
-    ['m', 'n', 'conv', 'sprd'].forEach(k => {
-      if (st.micMode && st.micMod[k]) {
-        const baked = Math.min(st[k] + st.audioLevel * MOD_RANGE[k], st[k] + MOD_RANGE[k]);
-        st[k] = (k === 'm' || k === 'n') ? Math.round(baked) : baked;
-      }
-      st.micMod[k] = false;
-    });
+    // Bake the exact param values from the last rendered frame so the animation
+    // stays at precisely what the user saw when they pressed Capture.
+    if (st.lastEffective) {
+      st.m    = Math.round(st.lastEffective.m);
+      st.n    = Math.round(st.lastEffective.n);
+      st.conv = st.lastEffective.conv;
+      st.sprd = st.lastEffective.sprd;
+    }
+    ['m', 'n', 'conv', 'sprd'].forEach(k => { st.micMod[k] = false; });
     st.captured = true;
     setIsCaptured(true);
     setWaveModActive(false);
