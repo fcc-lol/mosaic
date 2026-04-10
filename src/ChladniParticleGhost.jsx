@@ -470,13 +470,19 @@ export default function ChladniParticleGhost() {
     octx.fillStyle = '#000';
     octx.fillRect(0, 0, out.width, out.height);
     octx.drawImage(pt, 0, 0);
-    out.toBlob((blob) => {
+    out.toBlob(async (blob) => {
       if (!blob) return;
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = new File([blob], `chladni-${ts}.png`, { type: 'image/png' });
+      // On iOS/mobile use the native share sheet (includes Save to Photos).
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); return; } catch {}
+      }
+      // Desktop fallback: trigger a download.
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `chladni-${ts}.png`;
+      a.download = file.name;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
