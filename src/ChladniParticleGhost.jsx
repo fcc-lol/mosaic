@@ -475,7 +475,8 @@ export default function ChladniParticleGhost() {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = new File([blob], `chladni-${ts}.png`, { type: 'image/png' });
       // On iOS/mobile use the native share sheet (includes Save to Photos).
-      if (navigator.canShare?.({ files: [file] })) {
+      // Guard with maxTouchPoints to avoid triggering the sheet on desktop Safari.
+      if (navigator.maxTouchPoints > 1 && navigator.canShare?.({ files: [file] })) {
         try { await navigator.share({ files: [file] }); return; } catch {}
       }
       // Desktop fallback: trigger a download.
