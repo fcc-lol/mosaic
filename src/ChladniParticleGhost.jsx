@@ -485,6 +485,8 @@ export default function ChladniParticleGhost() {
   const startCameraAndMic = useCallback(async (facing) => {
     await startCamera(facing || s.current.facingMode || 'environment');
     if (!s.current.micMode) await startMic();
+    ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = true; });
+    setWaveModActive(true);
   }, [startCamera, startMic]);
 
   const stopCameraAndMic = useCallback(() => {
