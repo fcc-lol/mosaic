@@ -19,12 +19,33 @@ const PARTOP  = 1.0;
 // Maximum amount each param can swing upward when audio is at full level
 const MOD_RANGE = {
   m: 7, n: 6, conv: 0.4, sprd: 0.4,
+  turingScale: 6, turingWaves: 5,
 };
 
 // ── value arrays for matrix controllers ──────────────────────────────────
 const M_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
 const N_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
 const SETTLE_VALUES = Array.from({ length: 21 }, (_, i) => +(i / 20).toFixed(2));
+
+const TURING_INITIAL = { scale: 4, waves: 5 };
+const SCALE_VALUES   = Array.from({ length: 10 }, (_, i) => i + 1);  // 1–10
+const WAVES_VALUES   = Array.from({ length: 10 }, (_, i) => i + 2);  // 2–11
+
+// ── Turing pattern: precomputed random wave directions ──────────────────
+// 48 cosine waves with random orientations + phases create a band-limited
+// random field whose zero-crossings form organic labyrinthine patterns
+// (matching real reaction-diffusion morphology).
+const TURING_N = 48;
+const TURING_SEED = [];
+for (let i = 0; i < TURING_N; i++) {
+  // Deterministic pseudo-random via sine hash (no external PRNG needed).
+  const h1 = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  const h2 = Math.sin(i * 269.5 + 183.3) * 43758.5453;
+  TURING_SEED.push({
+    angle: ((h1 % 1 + 1) % 1) * Math.PI * 2,
+    phase: ((h2 % 1 + 1) % 1) * Math.PI * 2,
+  });
+}
 
 // ── MatrixController ──────────────────────────────────────────────────────
 function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
@@ -118,6 +139,9 @@ export default function ChladniParticleGhost() {
     micMode: false, analyser: null, audioStream: null, audioCtx: null,
     audioLevel: 0, micSensitivity: 3.0,
     micMod: Object.fromEntries(Object.keys(MOD_RANGE).map(k => [k, false])),
+    patternMode: 'chladni',
+    turingScale: TURING_INITIAL.scale,
+    turingWaves: TURING_INITIAL.waves,
     ...INITIAL,
   });
 
@@ -132,6 +156,9 @@ export default function ChladniParticleGhost() {
   const [convVal,        setConvVal]        = useState(INITIAL.conv);
   const [sprdVal,        setSprdVal]        = useState(INITIAL.sprd);
   const [waveModActive,  setWaveModActive]  = useState(false);
+  const [patternMode,    setPatternMode]    = useState('chladni');
+  const [scaleVal,       setScaleVal]       = useState(TURING_INITIAL.scale);
+  const [wavesVal,       setWavesVal]       = useState(TURING_INITIAL.waves);
   const dispRefs = useRef({});
 
   const setDisp = useCallback((id, text) => {
@@ -211,11 +238,15 @@ export default function ChladniParticleGhost() {
     };
 
     const { dsW: W, dsH: H, particles } = st;
-    const m = p('m'), n = p('n');
+    const isTuring = st.patternMode === 'turing';
+    const p1 = isTuring ? p('turingScale') : p('m');
+    const p2 = isTuring ? p('turingWaves') : p('n');
     const conv   = Math.max(0, Math.min(1, p('conv')));
     const spread = 4 + Math.max(0, Math.min(1, p('sprd'))) * 24;
     // Save the exact effective values used this frame so captureImage can bake them precisely.
-    st.lastEffective = { m, n, conv: p('conv'), sprd: p('sprd') };
+    st.lastEffective = isTuring
+      ? { turingScale: p1, turingWaves: p2, conv: p('conv'), sprd: p('sprd') }
+      : { m: p1, n: p2, conv: p('conv'), sprd: p('sprd') };
 
     const ptX = ptCanvasRef.current?.getContext('2d');
     if (!ptX) return;
@@ -267,22 +298,64 @@ export default function ChladniParticleGhost() {
     const K = 2.2; // gather sharpness — higher → tighter bunching at lines
     const tK = Math.tanh(K); // precompute normaliser
 
+    // Build Turing direction table once per frame — 48 waves with random
+    // orientations produce organic labyrinthine zero-crossings.  The `waves`
+    // param controls anisotropy: low → stripes, high → isotropic labyrinth.
+    let turingDirs;
+    if (isTuring) {
+      const nGroups = Math.round(p2);
+      const k = p1 * 2 * Math.PI / Math.min(W, H);
+      turingDirs = new Array(TURING_N);
+      for (let j = 0; j < TURING_N; j++) {
+        let angle = TURING_SEED[j].angle;
+        // Snap toward nearest of nGroups directions for stripe effect;
+        // snap fades to zero as nGroups increases → isotropic labyrinth.
+        const groupSize = (2 * Math.PI) / nGroups;
+        const nearest = Math.round(angle / groupSize) * groupSize;
+        const snap = Math.max(0, 1 - (nGroups - 2) / 9);
+        angle = angle + (nearest - angle) * snap;
+        turingDirs[j] = {
+          kx: k * Math.cos(angle),
+          ky: k * Math.sin(angle),
+          ph: TURING_SEED[j].phase,
+        };
+      }
+    }
+
     for (let i = 0; i < particles.length; i++) {
       const part = particles[i];
 
-      // Chladni value and gradient evaluated at the HOME position (origin).
-      // Always using the origin makes the deformation field stationary each
-      // frame — no drift, no Newton iteration needed.
-      const z  = chladni(part.ox,      part.oy,      m, n, W, H);
-      const zr = chladni(part.ox + gs, part.oy,      m, n, W, H);
-      const zl = chladni(part.ox - gs, part.oy,      m, n, W, H);
-      const zd = chladni(part.ox,      part.oy + gs, m, n, W, H);
-      const zu = chladni(part.ox,      part.oy - gs, m, n, W, H);
-      const gx = (zr - zl) / (2 * gs);
-      const gy = (zd - zu) / (2 * gs);
-      const gLen = Math.sqrt(gx * gx + gy * gy) + 1e-9;
-      const nx = gx / gLen, ny = gy / gLen; // unit normal (∇z direction)
-      const tx = -ny,       ty =  nx;       // unit tangent (along nodal line)
+      // Compute field value z and gradient at the particle's HOME position.
+      // Turing mode uses analytical gradient (cos+sin per wave, ~2.5× faster
+      // than 5 finite-difference field evaluations).  Chladni keeps finite
+      // differences since its closed-form gradient isn't worth the complexity.
+      let z, rawGx, rawGy;
+      if (isTuring) {
+        let fVal = 0, dfx = 0, dfy = 0;
+        for (let j = 0; j < TURING_N; j++) {
+          const d = turingDirs[j];
+          const arg = d.kx * part.ox + d.ky * part.oy + d.ph;
+          fVal += Math.cos(arg);
+          const sn = Math.sin(arg);
+          dfx -= d.kx * sn;
+          dfy -= d.ky * sn;
+        }
+        const sc = 2 / TURING_N;
+        z = fVal * sc;
+        rawGx = dfx * sc;
+        rawGy = dfy * sc;
+      } else {
+        z = chladni(part.ox, part.oy, p1, p2, W, H);
+        const zr = chladni(part.ox + gs, part.oy, p1, p2, W, H);
+        const zl = chladni(part.ox - gs, part.oy, p1, p2, W, H);
+        const zd = chladni(part.ox, part.oy + gs, p1, p2, W, H);
+        const zu = chladni(part.ox, part.oy - gs, p1, p2, W, H);
+        rawGx = (zr - zl) / (2 * gs);
+        rawGy = (zd - zu) / (2 * gs);
+      }
+      const gLen = Math.sqrt(rawGx * rawGx + rawGy * rawGy) + 1e-9;
+      const nx = rawGx / gLen, ny = rawGy / gLen; // unit normal (∇z direction)
+      const tx = -ny,          ty =  nx;           // unit tangent (along nodal line)
 
       // tanh gather: maps Chladni value z ∈ [-2,2] (approx) → displacement
       // ∈ (-spread, +spread)*conv, monotonically.  Monotone ⟹ no fold-overs.
@@ -446,24 +519,40 @@ export default function ChladniParticleGhost() {
     // Bake the exact param values from the last rendered frame so the animation
     // stays at precisely what the user saw when they pressed Capture.
     if (st.lastEffective) {
-      st.m    = st.lastEffective.m;
-      st.n    = st.lastEffective.n;
+      if (st.patternMode === 'turing') {
+        st.turingScale = st.lastEffective.turingScale;
+        st.turingWaves = st.lastEffective.turingWaves;
+      } else {
+        st.m = st.lastEffective.m;
+        st.n = st.lastEffective.n;
+      }
       st.conv = st.lastEffective.conv;
       st.sprd = st.lastEffective.sprd;
     }
-    ['m', 'n', 'conv', 'sprd'].forEach(k => { st.micMod[k] = false; });
+    Object.keys(MOD_RANGE).forEach(k => { st.micMod[k] = false; });
     st.captured = true;
     setIsCaptured(true);
     setWaveModActive(false);
-    setMVal(st.m);
-    setNVal(st.n);
+    if (st.patternMode === 'turing') {
+      setScaleVal(st.turingScale);
+      setWavesVal(st.turingWaves);
+    } else {
+      setMVal(st.m);
+      setNVal(st.n);
+    }
     setConvVal(st.conv);
     setSprdVal(st.sprd);
   }, []);
 
+  const modKeysForMode = () =>
+    s.current.patternMode === 'turing'
+      ? ['turingScale', 'turingWaves', 'conv', 'sprd']
+      : ['m', 'n', 'conv', 'sprd'];
+
   const restoreMic = useCallback(() => {
     if (s.current.micMode) {
-      ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = true; });
+      Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
+      modKeysForMode().forEach(k => { s.current.micMod[k] = true; });
       setWaveModActive(true);
     }
   }, []);
@@ -488,7 +577,8 @@ export default function ChladniParticleGhost() {
     out.toBlob(async (blob) => {
       if (!blob) return;
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const file = new File([blob], `chladni-${ts}.png`, { type: 'image/png' });
+      const prefix = s.current.patternMode === 'turing' ? 'turing' : 'chladni';
+      const file = new File([blob], `${prefix}-${ts}.png`, { type: 'image/png' });
       // On iOS/mobile use the native share sheet (includes Save to Photos).
       // Guard with maxTouchPoints to avoid triggering the sheet on desktop Safari.
       if (navigator.maxTouchPoints > 1 && navigator.canShare?.({ files: [file] })) {
@@ -543,7 +633,8 @@ export default function ChladniParticleGhost() {
   const startCameraAndMic = useCallback(async (facing) => {
     await startCamera(facing || s.current.facingMode || 'environment');
     if (!s.current.micMode) await startMic();
-    ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = true; });
+    Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
+    modKeysForMode().forEach(k => { s.current.micMod[k] = true; });
     setWaveModActive(true);
   }, [startCamera, startMic]);
 
@@ -564,9 +655,23 @@ export default function ChladniParticleGhost() {
   const toggleWaveMod = useCallback(() => {
     setWaveModActive(prev => {
       const next = !prev;
-      ['m', 'n', 'conv', 'sprd'].forEach(k => { s.current.micMod[k] = next; });
+      Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
+      if (next) modKeysForMode().forEach(k => { s.current.micMod[k] = true; });
       return next;
     });
+  }, []);
+
+  const switchPatternMode = useCallback((mode) => {
+    s.current.patternMode = mode;
+    setPatternMode(mode);
+    // Re-route mic modulation to the new mode's parameters.
+    if (s.current.micMode) {
+      Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
+      const keys = mode === 'turing'
+        ? ['turingScale', 'turingWaves', 'conv', 'sprd']
+        : ['m', 'n', 'conv', 'sprd'];
+      keys.forEach(k => { s.current.micMod[k] = true; });
+    }
   }, []);
 
   // ── cleanup on unmount ───────────────────────────────────────────────────
@@ -624,12 +729,56 @@ export default function ChladniParticleGhost() {
 
   const renderControls = () => (
     <>
+      {/* ── pattern mode selector ── */}
+      <div className="mode-selector-row">
+        <button
+          className={`mode-btn${patternMode === 'chladni' ? ' active' : ''}`}
+          onClick={() => switchPatternMode('chladni')}
+          title="Chladni pattern"
+          aria-label="Chladni pattern"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="12" y1="3" x2="12" y2="21"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <path d="M4 4Q12 8.5 20 4"/>
+            <path d="M4 20Q12 15.5 20 20"/>
+            <path d="M4 4Q8.5 12 4 20"/>
+            <path d="M20 4Q15.5 12 20 20"/>
+          </svg>
+        </button>
+        <button
+          className={`mode-btn${patternMode === 'turing' ? ' active' : ''}`}
+          onClick={() => switchPatternMode('turing')}
+          title="Turing pattern"
+          aria-label="Turing pattern"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <circle cx="5.5" cy="5" r="2"/>
+            <circle cx="15" cy="4" r="1.8"/>
+            <circle cx="20" cy="11" r="1.6"/>
+            <circle cx="10.5" cy="11.5" r="2.4"/>
+            <circle cx="3.5" cy="14" r="1.4"/>
+            <circle cx="17" cy="18.5" r="2"/>
+            <circle cx="7" cy="20" r="1.8"/>
+            <circle cx="21" cy="20" r="1.2"/>
+          </svg>
+        </button>
+      </div>
+
       <div className="matrices-row">
-        <MatrixController
-          xValues={M_VALUES} yValues={N_VALUES}
-          xVal={mVal} yVal={nVal}
-          onSelect={(m, n) => { s.current.m = m; s.current.n = n; setMVal(m); setNVal(n); }}
-        />
+        {patternMode === 'chladni' ? (
+          <MatrixController
+            xValues={M_VALUES} yValues={N_VALUES}
+            xVal={mVal} yVal={nVal}
+            onSelect={(m, n) => { s.current.m = m; s.current.n = n; setMVal(m); setNVal(n); }}
+          />
+        ) : (
+          <MatrixController
+            xValues={SCALE_VALUES} yValues={WAVES_VALUES}
+            xVal={scaleVal} yVal={wavesVal}
+            onSelect={(scale, waves) => { s.current.turingScale = scale; s.current.turingWaves = waves; setScaleVal(scale); setWavesVal(waves); }}
+          />
+        )}
         <MatrixController
           xValues={SETTLE_VALUES} yValues={SETTLE_VALUES}
           xVal={sprdVal} yVal={convVal}
@@ -985,6 +1134,27 @@ export default function ChladniParticleGhost() {
             width: 30px; height: 30px;
           }
           .ctrl .mod-wrap { grid-area: mod; font-size: 0; }
+        }
+        /* Pattern mode selector */
+        .mode-selector-row {
+          display: flex; gap: 8px; margin-bottom: 10px;
+        }
+        .mode-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 44px; height: 44px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 10px;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          transition: background .15s, border-color .15s, color .15s;
+        }
+        .mode-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+        .mode-btn.active {
+          background: rgba(200,192,168,0.12);
+          border-color: rgba(200,192,168,0.35);
+          color: var(--accent);
         }
         /* Matrix controllers */
         .matrices-row { display: flex; gap: 10px; margin-bottom: 10px; }
