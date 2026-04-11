@@ -259,47 +259,62 @@ export default function ChladniParticleGhost() {
     // bands). Each grain is then pushed along the nodal-line normal by
     // `spread * jitter` for band thickness, and finally nudged every
     // frame by a fresh random `wiggle` so the bands shimmer like sand.
-    const ITERS = 5;
-    const stepScale = 0.7;
+    // Fabric-curtain gather: particles displace toward nodal lines via a
+    // smooth, topology-preserving tanh mapping.  Unlike Newton iteration
+    // (which snaps grains to lines and leaves gaps), this keeps every region
+    // of the canvas covered — the "sheet" bunches at the lines but never
+    // tears, so you always see image colour at every point.
+    const K = 2.2; // gather sharpness — higher → tighter bunching at lines
+    const tK = Math.tanh(K); // precompute normaliser
 
     for (let i = 0; i < particles.length; i++) {
       const part = particles[i];
-      let x = part.ox, y = part.oy;
-      let gx = 0, gy = 0;
-      for (let k = 0; k < ITERS; k++) {
-        const z  = chladni(x,      y,      m, n, W, H);
-        const zr = chladni(x + gs, y,      m, n, W, H);
-        const zl = chladni(x - gs, y,      m, n, W, H);
-        const zd = chladni(x,      y + gs, m, n, W, H);
-        const zu = chladni(x,      y - gs, m, n, W, H);
-        gx = (zr - zl) / (2 * gs);
-        gy = (zd - zu) / (2 * gs);
-        const g2 = gx * gx + gy * gy + 1e-9;
-        x -= (z * gx / g2) * stepScale;
-        y -= (z * gy / g2) * stepScale;
-      }
-      // Lerp from origin toward the snapped target by `conv`.
-      x = part.ox + (x - part.ox) * conv;
-      y = part.oy + (y - part.oy) * conv;
-      // Spread along the (normalized) gradient — perpendicular to the
-      // nodal line — using each grain's stable jitter, scaled by conv so
-      // the spread fades in alongside the convergence.
+
+      // Chladni value and gradient evaluated at the HOME position (origin).
+      // Always using the origin makes the deformation field stationary each
+      // frame — no drift, no Newton iteration needed.
+      const z  = chladni(part.ox,      part.oy,      m, n, W, H);
+      const zr = chladni(part.ox + gs, part.oy,      m, n, W, H);
+      const zl = chladni(part.ox - gs, part.oy,      m, n, W, H);
+      const zd = chladni(part.ox,      part.oy + gs, m, n, W, H);
+      const zu = chladni(part.ox,      part.oy - gs, m, n, W, H);
+      const gx = (zr - zl) / (2 * gs);
+      const gy = (zd - zu) / (2 * gs);
       const gLen = Math.sqrt(gx * gx + gy * gy) + 1e-9;
-      const nxg = gx / gLen, nyg = gy / gLen;
-      x += nxg * spread * part.jitter * conv;
-      y += nyg * spread * part.jitter * conv;
-      // Additional spread along the nodal-line tangent for richer random
-      // displacement within the settle — independent of the normal spread.
-      const txg = -nyg, tyg = nxg;
-      x += txg * spread * 0.4 * part.jitter2 * conv;
-      y += tyg * spread * 0.4 * part.jitter2 * conv;
+      const nx = gx / gLen, ny = gy / gLen; // unit normal (∇z direction)
+      const tx = -ny,       ty =  nx;       // unit tangent (along nodal line)
+
+      // tanh gather: maps Chladni value z ∈ [-2,2] (approx) → displacement
+      // ∈ (-spread, +spread)*conv, monotonically.  Monotone ⟹ no fold-overs.
+      const zn          = z * 0.5;                          // normalise to ≈[-1,1]
+      const gatherFrac  = Math.tanh(zn * K) / tK;           // ∈ (-1, 1)
+      const displacement = gatherFrac * spread * conv;
+
+      let x = part.ox - nx * displacement;
+      let y = part.oy - ny * displacement;
+
+      // Thin fabric body at the gather line — small normal jitter gives the
+      // gathered crease some physical thickness without hiding image detail.
+      x += nx * spread * 0.12 * part.jitter  * conv;
+      y += ny * spread * 0.12 * part.jitter  * conv;
+
+      // Animated drape flutter along the gather lines.  A slow spatial wave
+      // makes the curtain ripple gently so the fabric reads as alive.
+      const phase   = ts * 0.0007;
+      const waveAmp = 2.5 * conv;
+      x += tx * (Math.sin(part.ox * 0.038 + part.oy * 0.018 + phase)       * waveAmp
+               + Math.sin(part.ox * 0.019 + part.oy * 0.041 + phase * 0.7) * waveAmp * 0.5);
+      y += ty * (Math.sin(part.ox * 0.018 + part.oy * 0.038 + phase * 1.1) * waveAmp
+               + Math.sin(part.ox * 0.041 + part.oy * 0.019 + phase * 0.8) * waveAmp * 0.5);
+
       part.x = x; part.y = y;
 
-      // Particles nearer the nodal-line center (|jitter| ≈ 0) render
-      // slightly larger; edge particles are smaller.
-      const centeredness = (1 - Math.abs(part.jitter)) * conv;
-      const radius = Math.max(0.4, PS + centeredness * 0.55);
-      const alpha  = Math.min(1, 0.75 * PARTOP);
+      // Particles at the gather lines (z≈0) are denser (many stacked) so
+      // we drop alpha slightly there; between lines particles are sparser but
+      // more opaque so the image still reads through.
+      const nearLine = Math.exp(-zn * zn * 5) * conv;         // 1 at line, 0 far
+      const radius   = Math.max(0.5, PS + nearLine * 0.5);
+      const alpha    = Math.min(1, (0.5 + (1 - nearLine) * 0.25) * PARTOP);
       const br = Math.min(255, Math.round(part.r * BOOST));
       const bg = Math.min(255, Math.round(part.g * BOOST));
       const bb = Math.min(255, Math.round(part.b * BOOST));
