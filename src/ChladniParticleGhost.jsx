@@ -628,11 +628,12 @@ export default function ChladniParticleGhost() {
     ? 'http://localhost:5176' : 'https://cloud.leo.gd';
 
   const postToCloud = useCallback(async () => {
-    // Open the window immediately to preserve the user gesture context,
-    // then navigate it after the upload completes.
-    const win = window.open('', '_blank');
+    // Open the tab immediately with the cloud URL to preserve the user
+    // gesture context (required on mobile Safari). The tab shows cloud
+    // while the upload happens in the background here.
+    const win = window.open(cloudApp, '_blank');
     const blob = await getFlattenedBlob();
-    if (!blob) { if (win) win.close(); return; }
+    if (!blob) return;
     const form = new FormData();
     form.append('image', blob, 'mosaic.jpg');
     try {
@@ -643,10 +644,8 @@ export default function ChladniParticleGhost() {
       const { filename } = await res.json();
       const url = `${cloudApp}/?compose=${filename}&source=mosaic`;
       if (win) win.location = url;
-      else window.location = url;
     } catch (e) {
       console.warn('Post to Cloud failed:', e);
-      if (win) win.close();
     }
   }, [getFlattenedBlob]);
 
