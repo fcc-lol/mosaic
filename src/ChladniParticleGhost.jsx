@@ -1105,7 +1105,7 @@ export default function ChladniParticleGhost() {
           }
           #canvas-area {
             flex: 0 0 auto;
-            padding: 24px 24px;
+            padding: 24px 24px 12px;
             width: 100%;
             overflow: visible;
           }
@@ -1121,7 +1121,7 @@ export default function ChladniParticleGhost() {
             flex: 1 1 0;
             min-height: 0;
             overflow-y: auto;
-            padding: 14px 24px 16px;
+            padding: 12px 24px 24px;
             background: transparent;
             position: relative;
             z-index: 1;
