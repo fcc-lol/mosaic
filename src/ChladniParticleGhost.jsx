@@ -910,6 +910,7 @@ export default function ChladniParticleGhost() {
           position: relative; flex: 1 1 0; min-height: 0;
           display: flex; align-items: center; justify-content: center;
           padding: 24px; overflow: visible;
+          max-height: 640px;
         }
         #canvas-wrap {
           position: relative; border-radius: 16px; overflow: hidden;
@@ -1110,11 +1111,8 @@ export default function ChladniParticleGhost() {
             overflow: visible;
           }
           #canvas-wrap {
-            width: 100%;
+            width: min(100%, 50dvh);
             height: auto;
-            max-width: none;
-            max-height: 50dvh;
-            border-radius: 16px;
             aspect-ratio: 1 / 1;
           }
           #controls {
