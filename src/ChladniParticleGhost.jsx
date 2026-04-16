@@ -11,10 +11,10 @@ const INITIAL = {
 const CANVAS_SIZE = 600;
 
 // Locked particle/render params (no longer user-controllable).
-const GRID    = 5;
-const PS      = 1.4;
-const BOOST   = 1.8;
-const PARTOP  = 1.0;
+const GRID = 5;
+const PS = 1.4;
+const BOOST = 1.8;
+const PARTOP = 1.0;
 
 // Maximum amount each param can swing upward when audio is at full level
 const MOD_RANGE = {
@@ -23,13 +23,13 @@ const MOD_RANGE = {
 };
 
 // ── value arrays for matrix controllers ──────────────────────────────────
-const M_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
-const N_VALUES      = Array.from({ length: 10 }, (_, i) => i + 1);
+const M_VALUES = Array.from({ length: 10 }, (_, i) => i + 1);
+const N_VALUES = Array.from({ length: 10 }, (_, i) => i + 1);
 const SETTLE_VALUES = Array.from({ length: 21 }, (_, i) => +(i / 20).toFixed(2));
 
 const TURING_INITIAL = { scale: 4, waves: 5 };
-const SCALE_VALUES   = Array.from({ length: 10 }, (_, i) => i + 1);  // 1–10
-const WAVES_VALUES   = Array.from({ length: 10 }, (_, i) => i + 2);  // 2–11
+const SCALE_VALUES = Array.from({ length: 10 }, (_, i) => i + 1);  // 1–10
+const WAVES_VALUES = Array.from({ length: 10 }, (_, i) => i + 2);  // 2–11
 
 // ── Turing pattern: precomputed random wave directions ──────────────────
 // 48 cosine waves with random orientations + phases create a band-limited
@@ -52,11 +52,11 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
   const cols = xValues.length;
   const rows = yValues.length;
   const CELL = 20, PAD = 6;
-  const vw   = cols * CELL + PAD * 2;
-  const vh   = rows * CELL + PAD * 2;
+  const vw = cols * CELL + PAD * 2;
+  const vh = rows * CELL + PAD * 2;
   const selX = Math.max(0, xValues.findIndex(v => Math.abs(v - xVal) < 1e-9));
   const selY = Math.max(0, yValues.findIndex(v => Math.abs(v - yVal) < 1e-9));
-  const sig  = (Math.max(cols, rows) - 1) * 0.35;
+  const sig = (Math.max(cols, rows) - 1) * 0.35;
   const svgRef = React.useRef(null);
   const onSelectRef = React.useRef(onSelect);
   React.useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
@@ -81,9 +81,9 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
     const el = svgRef.current;
     if (!el) return;
     const onStart = e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(el, t.clientX, t.clientY); };
-    const onMove  = e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(el, t.clientX, t.clientY); };
+    const onMove = e => { e.preventDefault(); const t = e.targetTouches[0]; fireSelect(el, t.clientX, t.clientY); };
     el.addEventListener('touchstart', onStart, { passive: false });
-    el.addEventListener('touchmove',  onMove,  { passive: false });
+    el.addEventListener('touchmove', onMove, { passive: false });
     return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); };
   }, [xValues, yValues]);  // re-bind if value arrays change
 
@@ -91,7 +91,7 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
   for (let yi = 0; yi < rows; yi++) {
     for (let xi = 0; xi < cols; xi++) {
       const dx = xi - selX, dy = yi - selY;
-      const t  = Math.exp(-(dx * dx + dy * dy) / (2 * sig * sig));
+      const t = Math.exp(-(dx * dx + dy * dy) / (2 * sig * sig));
       dots.push(
         <circle
           key={`${xi},${yi}`}
@@ -120,13 +120,13 @@ function MatrixController({ xValues, yValues, xVal, yVal, onSelect }) {
 }
 
 export default function ChladniParticleGhost() {
-  const ptCanvasRef      = useRef(null);
-  const canvasWrapRef    = useRef(null);
-  const statusRef        = useRef(null);
-  const videoRef         = useRef(null);
-  const cameraTmpRef     = useRef(null);
-  const bgCanvasRef      = useRef(null); // tiny downsampled frame blurred as app bg
-  const audioDataRef     = useRef(null); // cached Uint8Array for analyser reads
+  const ptCanvasRef = useRef(null);
+  const canvasWrapRef = useRef(null);
+  const statusRef = useRef(null);
+  const videoRef = useRef(null);
+  const cameraTmpRef = useRef(null);
+  const bgCanvasRef = useRef(null); // tiny downsampled frame blurred as app bg
+  const audioDataRef = useRef(null); // cached Uint8Array for analyser reads
 
   // All animation-loop mutable state — never causes re-renders.
   const s = useRef({
@@ -147,20 +147,20 @@ export default function ChladniParticleGhost() {
 
   // React state only for UI that affects render
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isMicActive,    setIsMicActive]    = useState(false);
-  const [micModParams,   setMicModParams]   = useState(new Set());
-  const [facingMode,     setFacingMode]     = useState('environment');
-  const [isCaptured,     setIsCaptured]     = useState(false);
+  const [isMicActive, setIsMicActive] = useState(false);
+  const [micModParams, setMicModParams] = useState(new Set());
+  const [facingMode, setFacingMode] = useState('environment');
+  const [isCaptured, setIsCaptured] = useState(false);
   const [layoutReady, setLayoutReady] = useState(false);
   useEffect(() => { const t = setTimeout(() => setLayoutReady(true), 500); return () => clearTimeout(t); }, []);
-  const [mVal,           setMVal]           = useState(INITIAL.m);
-  const [nVal,           setNVal]           = useState(INITIAL.n);
-  const [convVal,        setConvVal]        = useState(INITIAL.conv);
-  const [sprdVal,        setSprdVal]        = useState(INITIAL.sprd);
-  const [waveModActive,  setWaveModActive]  = useState(false);
-  const [patternMode,    setPatternMode]    = useState('chladni');
-  const [scaleVal,       setScaleVal]       = useState(TURING_INITIAL.scale);
-  const [wavesVal,       setWavesVal]       = useState(TURING_INITIAL.waves);
+  const [mVal, setMVal] = useState(INITIAL.m);
+  const [nVal, setNVal] = useState(INITIAL.n);
+  const [convVal, setConvVal] = useState(INITIAL.conv);
+  const [sprdVal, setSprdVal] = useState(INITIAL.sprd);
+  const [waveModActive, setWaveModActive] = useState(false);
+  const [patternMode, setPatternMode] = useState('chladni');
+  const [scaleVal, setScaleVal] = useState(TURING_INITIAL.scale);
+  const [wavesVal, setWavesVal] = useState(TURING_INITIAL.waves);
   const dispRefs = useRef({});
 
   const setDisp = useCallback((id, text) => {
@@ -185,7 +185,7 @@ export default function ChladniParticleGhost() {
         // jitter ∈ [-1, 1] — fixed per-particle spread along the nodal-line normal.
         // jitter2 ∈ [-1, 1] — independent spread along the nodal-line tangent,
         // adding randomness in the along-line direction for a more natural scatter.
-        const jitter  = Math.random() * 2 - 1;
+        const jitter = Math.random() * 2 - 1;
         const jitter2 = Math.random() * 2 - 1;
         particles.push({ ox: cx, oy: cy, x: cx, y: cy, jitter, jitter2, r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) });
       }
@@ -215,7 +215,7 @@ export default function ChladniParticleGhost() {
   const chladni = (x, y, m, n, W, H) => {
     const px = x / W, py = y / H;
     return Math.cos(n * Math.PI * px) * Math.cos(m * Math.PI * py)
-         - Math.cos(m * Math.PI * px) * Math.cos(n * Math.PI * py);
+      - Math.cos(m * Math.PI * px) * Math.cos(n * Math.PI * py);
   };
 
   const frame = useCallback((ts) => {
@@ -243,7 +243,7 @@ export default function ChladniParticleGhost() {
     const isTuring = st.patternMode === 'turing';
     const p1 = isTuring ? p('turingScale') : p('m');
     const p2 = isTuring ? p('turingWaves') : p('n');
-    const conv   = Math.max(0, Math.min(1, p('conv')));
+    const conv = Math.max(0, Math.min(1, p('conv')));
     const spread = 4 + Math.max(0, Math.min(1, p('sprd'))) * 24;
     // Save the exact effective values used this frame so captureImage can bake them precisely.
     st.lastEffective = isTuring
@@ -257,7 +257,7 @@ export default function ChladniParticleGhost() {
     // ── camera: pull new frame from video (center-cropped, mirrored if front) ─────
     if (st.cameraMode && !st.captured) {
       const video = videoRef.current;
-      const tmp   = cameraTmpRef.current;
+      const tmp = cameraTmpRef.current;
       if (video && tmp && video.readyState >= 2 && video.videoWidth > 0) {
         const vw = video.videoWidth, vh = video.videoHeight;
         const sSize = Math.min(vw, vh);
@@ -273,7 +273,7 @@ export default function ChladniParticleGhost() {
         tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, W, H);
         tmpCtx.restore();
         const imageData = tmpCtx.getImageData(0, 0, W, H);
-        st.srcPixels   = imageData.data;
+        st.srcPixels = imageData.data;
         refreshParticleColors();
         // Feed a tiny downsampled copy to the blurred background canvas so
         // the whole app feels reactive to what the camera is seeing.
@@ -369,12 +369,12 @@ export default function ChladniParticleGhost() {
       }
       const gLen = Math.sqrt(rawGx * rawGx + rawGy * rawGy) + 1e-9;
       const nx = rawGx / gLen, ny = rawGy / gLen; // unit normal (∇z direction)
-      const tx = -ny,          ty =  nx;           // unit tangent (along nodal line)
+      const tx = -ny, ty = nx;           // unit tangent (along nodal line)
 
       // tanh gather: maps Chladni value z ∈ [-2,2] (approx) → displacement
       // ∈ (-spread, +spread)*conv, monotonically.  Monotone ⟹ no fold-overs.
-      const zn          = z * 0.5;                          // normalise to ≈[-1,1]
-      const gatherFrac  = Math.tanh(zn * K) / tK;           // ∈ (-1, 1)
+      const zn = z * 0.5;                          // normalise to ≈[-1,1]
+      const gatherFrac = Math.tanh(zn * K) / tK;           // ∈ (-1, 1)
       const displacement = gatherFrac * spread * conv;
 
       let x = part.ox - nx * displacement;
@@ -382,17 +382,17 @@ export default function ChladniParticleGhost() {
 
       // Thin fabric body at the gather line — small normal jitter gives the
       // gathered crease some physical thickness without hiding image detail.
-      x += nx * spread * 0.12 * part.jitter  * conv;
-      y += ny * spread * 0.12 * part.jitter  * conv;
+      x += nx * spread * 0.12 * part.jitter * conv;
+      y += ny * spread * 0.12 * part.jitter * conv;
 
       // Animated drape flutter along the gather lines.  A slow spatial wave
       // makes the curtain ripple gently so the fabric reads as alive.
-      const phase   = ts * 0.0007;
+      const phase = ts * 0.0007;
       const waveAmp = 2.5 * conv;
-      x += tx * (Math.sin(part.ox * 0.038 + part.oy * 0.018 + phase)       * waveAmp
-               + Math.sin(part.ox * 0.019 + part.oy * 0.041 + phase * 0.7) * waveAmp * 0.5);
+      x += tx * (Math.sin(part.ox * 0.038 + part.oy * 0.018 + phase) * waveAmp
+        + Math.sin(part.ox * 0.019 + part.oy * 0.041 + phase * 0.7) * waveAmp * 0.5);
       y += ty * (Math.sin(part.ox * 0.018 + part.oy * 0.038 + phase * 1.1) * waveAmp
-               + Math.sin(part.ox * 0.041 + part.oy * 0.019 + phase * 0.8) * waveAmp * 0.5);
+        + Math.sin(part.ox * 0.041 + part.oy * 0.019 + phase * 0.8) * waveAmp * 0.5);
 
       part.x = x; part.y = y;
 
@@ -400,8 +400,8 @@ export default function ChladniParticleGhost() {
       // we drop alpha slightly there; between lines particles are sparser but
       // more opaque so the image still reads through.
       const nearLine = Math.exp(-zn * zn * 5) * conv;         // 1 at line, 0 far
-      const radius   = Math.max(0.5, PS + nearLine * 0.5);
-      const alpha    = Math.min(1, (0.5 + (1 - nearLine) * 0.25) * PARTOP);
+      const radius = Math.max(0.5, PS + nearLine * 0.5);
+      const alpha = Math.min(1, (0.5 + (1 - nearLine) * 0.25) * PARTOP);
       const br = Math.min(255, Math.round(part.r * BOOST));
       const bg = Math.min(255, Math.round(part.g * BOOST));
       const bb = Math.min(255, Math.round(part.b * BOOST));
@@ -437,7 +437,7 @@ export default function ChladniParticleGhost() {
     const st = s.current;
     if (st.cameraStream) { st.cameraStream.getTracks().forEach(t => t.stop()); st.cameraStream = null; }
     st.cameraMode = false;
-    st.captured   = false;
+    st.captured = false;
     if (videoRef.current) videoRef.current.srcObject = null;
     if (st.animId) { cancelAnimationFrame(st.animId); st.animId = null; }
     const ptX = ptCanvasRef.current?.getContext('2d');
@@ -454,15 +454,15 @@ export default function ChladniParticleGhost() {
     try {
       const facing = requestedFacing || s.current.facingMode || 'environment';
       const videoConstraints = {
-        width:  { ideal: 1280 },
+        width: { ideal: 1280 },
         height: { ideal: 720 },
         facingMode: { ideal: facing },
       };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       s.current.cameraStream = stream;
-      s.current.cameraMode   = true;
-      s.current.facingMode   = facing;
-      s.current.captured     = false;
+      s.current.cameraMode = true;
+      s.current.facingMode = facing;
+      s.current.captured = false;
       setFacingMode(facing);
       setIsCameraActive(true);
       setIsCaptured(false);
@@ -472,7 +472,7 @@ export default function ChladniParticleGhost() {
         video.play();
         // Canvas is always square. The frame loop center-crops (and mirrors if front).
         if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
-        cameraTmpRef.current.width  = CANVAS_SIZE;
+        cameraTmpRef.current.width = CANVAS_SIZE;
         cameraTmpRef.current.height = CANVAS_SIZE;
         setupCanvas(CANVAS_SIZE, CANVAS_SIZE);
         video.addEventListener('playing', () => {
@@ -490,7 +490,7 @@ export default function ChladniParticleGhost() {
           tmpCtx.drawImage(video, sx, sy, sSize, sSize, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
           tmpCtx.restore();
           const imageData = tmpCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-          s.current.srcPixels   = imageData.data;
+          s.current.srcPixels = imageData.data;
           sampleParticles(); startAnim();
         }, { once: true });
       };
@@ -510,13 +510,13 @@ export default function ChladniParticleGhost() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width:  { ideal: 1280 },
+          width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: { ideal: next },
         },
       });
       st.cameraStream = stream;
-      st.facingMode   = next;
+      st.facingMode = next;
       setFacingMode(next);
       const video = videoRef.current;
       video.srcObject = stream;
@@ -588,7 +588,7 @@ export default function ChladniParticleGhost() {
     if (!pt) return Promise.resolve(null);
     // bg is already composited into the particle canvas each frame.
     const out = document.createElement('canvas');
-    out.width  = pt.width;
+    out.width = pt.width;
     out.height = pt.height;
     const octx = out.getContext('2d');
     octx.fillStyle = '#000';
@@ -604,7 +604,7 @@ export default function ChladniParticleGhost() {
     const prefix = s.current.patternMode === 'turing' ? 'turing' : 'chladni';
     const file = new File([blob], `${prefix}-${ts}.jpg`, { type: 'image/jpeg' });
     if (navigator.maxTouchPoints > 1 && navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); return; } catch {}
+      try { await navigator.share({ files: [file] }); return; } catch { }
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -654,24 +654,24 @@ export default function ChladniParticleGhost() {
   const stopMic = useCallback(() => {
     const st = s.current;
     if (st.audioStream) { st.audioStream.getTracks().forEach(t => t.stop()); st.audioStream = null; }
-    if (st.audioCtx)    { st.audioCtx.close(); st.audioCtx = null; }
+    if (st.audioCtx) { st.audioCtx.close(); st.audioCtx = null; }
     st.analyser = null; st.micMode = false; st.audioLevel = 0;
     setIsMicActive(false);
   }, []);
 
   const startMic = useCallback(async () => {
     try {
-      const stream  = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const ctx     = new AudioContext();
-      const source  = ctx.createMediaStreamSource(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      audioDataRef.current       = new Uint8Array(analyser.frequencyBinCount);
-      s.current.audioStream      = stream;
-      s.current.analyser         = analyser;
-      s.current.audioCtx         = ctx;
-      s.current.micMode          = true;
+      audioDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+      s.current.audioStream = stream;
+      s.current.analyser = analyser;
+      s.current.audioCtx = ctx;
+      s.current.micMode = true;
       setIsMicActive(true);
     } catch {
       if (statusRef.current) statusRef.current.textContent = 'Microphone access denied';
@@ -736,10 +736,10 @@ export default function ChladniParticleGhost() {
   useEffect(() => {
     if (!cameraTmpRef.current) cameraTmpRef.current = document.createElement('canvas');
     return () => {
-      if (s.current.animId)     cancelAnimationFrame(s.current.animId);
+      if (s.current.animId) cancelAnimationFrame(s.current.animId);
       if (s.current.cameraStream) s.current.cameraStream.getTracks().forEach(t => t.stop());
-      if (s.current.audioStream)  s.current.audioStream.getTracks().forEach(t => t.stop());
-      if (s.current.audioCtx)     s.current.audioCtx.close();
+      if (s.current.audioStream) s.current.audioStream.getTracks().forEach(t => t.stop());
+      if (s.current.audioCtx) s.current.audioCtx.close();
     };
   }, []);
 
@@ -795,12 +795,12 @@ export default function ChladniParticleGhost() {
           aria-label="Chladni pattern"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <line x1="12" y1="3" x2="12" y2="21"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <path d="M4 4Q12 8.5 20 4"/>
-            <path d="M4 20Q12 15.5 20 20"/>
-            <path d="M4 4Q8.5 12 4 20"/>
-            <path d="M20 4Q15.5 12 20 20"/>
+            <line x1="12" y1="3" x2="12" y2="21" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <path d="M4 4Q12 8.5 20 4" />
+            <path d="M4 20Q12 15.5 20 20" />
+            <path d="M4 4Q8.5 12 4 20" />
+            <path d="M20 4Q15.5 12 20 20" />
           </svg>
         </button>
         <button
@@ -810,14 +810,14 @@ export default function ChladniParticleGhost() {
           aria-label="Turing pattern"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <circle cx="5.5" cy="5" r="2"/>
-            <circle cx="15" cy="4" r="1.8"/>
-            <circle cx="20" cy="11" r="1.6"/>
-            <circle cx="10.5" cy="11.5" r="2.4"/>
-            <circle cx="3.5" cy="14" r="1.4"/>
-            <circle cx="17" cy="18.5" r="2"/>
-            <circle cx="7" cy="20" r="1.8"/>
-            <circle cx="21" cy="20" r="1.2"/>
+            <circle cx="5.5" cy="5" r="2" />
+            <circle cx="15" cy="4" r="1.8" />
+            <circle cx="20" cy="11" r="1.6" />
+            <circle cx="10.5" cy="11.5" r="2.4" />
+            <circle cx="3.5" cy="14" r="1.4" />
+            <circle cx="17" cy="18.5" r="2" />
+            <circle cx="7" cy="20" r="1.8" />
+            <circle cx="21" cy="20" r="1.2" />
           </svg>
         </button>
       </div>
@@ -844,22 +844,9 @@ export default function ChladniParticleGhost() {
       </div>
 
       <LayoutGroup>
-        <div className="action-row">
+        <motion.div layout className={`action-row${isCaptured ? ' captured' : ''}`}>
           <AnimatePresence mode="popLayout" initial={false}>
-            {isCaptured ? (
-              <motion.button
-                key="clear"
-                layout
-                className="chunk-btn clear-btn"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={clearCapture}
-              >
-                Clear
-              </motion.button>
-            ) : (
+            {!isCaptured && (
               <motion.button
                 key="mic"
                 layout
@@ -875,17 +862,42 @@ export default function ChladniParticleGhost() {
             )}
           </AnimatePresence>
 
-          <motion.button
-            layout
-            className="chunk-btn primary main-action"
-            onClick={isCaptured ? savePhoto : captureImage}
-            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-          >
-            {isCaptured ? 'Save' : 'Capture'}
-          </motion.button>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {!isCaptured && (
+              <motion.button
+                key="capture"
+                layout
+                className="chunk-btn primary main-action"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={captureImage}
+              >
+                Capture
+              </motion.button>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence mode="popLayout" initial={false}>
-            {isCaptured ? (
+            {isCaptured && (
+              <motion.button
+                key="save"
+                layout
+                className="chunk-btn primary"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={savePhoto}
+              >
+                Save
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="popLayout" initial={false}>
+            {isCaptured && (
               <motion.button
                 key="post-cloud"
                 layout
@@ -898,7 +910,28 @@ export default function ChladniParticleGhost() {
               >
                 Post to Cloud
               </motion.button>
-            ) : (
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="popLayout" initial={false}>
+            {isCaptured && (
+              <motion.button
+                key="clear"
+                layout
+                className="chunk-btn clear-btn"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={clearCapture}
+              >
+                Clear
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="popLayout" initial={false}>
+            {!isCaptured && (
               <motion.button
                 key="swap"
                 layout
@@ -914,7 +947,7 @@ export default function ChladniParticleGhost() {
               </motion.button>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
       </LayoutGroup>
     </>
   );
@@ -973,7 +1006,7 @@ export default function ChladniParticleGhost() {
         #controls {
           flex-shrink: 0;
           padding: 0 24px 24px;
-          display: flex; flex-direction: column; justify-content: center;
+          display: flex; flex-direction: column; justify-content: space-around;
         }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
         #canvas-wrap::after {
@@ -1040,6 +1073,7 @@ export default function ChladniParticleGhost() {
 
         /* Source area: main action + optional swap/clear + indicators */
         .action-row  { display: flex; align-items: stretch; gap: 10px; width: 100%; }
+        .action-row.captured { flex-direction: column; }
         .chunk-btn {
           display: flex; align-items: center; justify-content: center;
           flex: 1 1 0;
@@ -1145,7 +1179,7 @@ export default function ChladniParticleGhost() {
           }
           #canvas-area {
             flex: 0 0 auto;
-            padding: 24px 24px 12px;
+            padding: 24px 24px;
             width: 100%;
             overflow: visible;
           }
@@ -1248,7 +1282,7 @@ export default function ChladniParticleGhost() {
       <div className="chladni-root">
         <div id="canvas-area">
           <div id="canvas-wrap" ref={canvasWrapRef}>
-            <canvas id="c-particles"  ref={ptCanvasRef} />
+            <canvas id="c-particles" ref={ptCanvasRef} />
           </div>
         </div>
 
