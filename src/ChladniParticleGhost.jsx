@@ -843,112 +843,29 @@ export default function ChladniParticleGhost() {
         />
       </div>
 
-      <LayoutGroup>
-        <motion.div layout className={`action-row${isCaptured ? ' captured' : ''}`}>
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!isCaptured && (
-              <motion.button
-                key="mic"
-                layout
-                className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={toggleWaveMod}
-              >
-                <FontAwesomeIcon icon={waveModActive ? faMicrophone : faMicrophoneSlash} style={{ fontSize: 18 }} />
-              </motion.button>
-            )}
-          </AnimatePresence>
+      <div className="action-row">
+        <button
+          className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
+          onClick={toggleWaveMod}
+        >
+          <FontAwesomeIcon icon={waveModActive ? faMicrophone : faMicrophoneSlash} style={{ fontSize: 18 }} />
+        </button>
 
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!isCaptured && (
-              <motion.button
-                key="capture"
-                layout
-                className="chunk-btn primary main-action"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={captureImage}
-              >
-                Capture
-              </motion.button>
-            )}
-          </AnimatePresence>
+        <button
+          className="chunk-btn primary main-action"
+          onClick={captureImage}
+        >
+          Capture
+        </button>
 
-          <AnimatePresence mode="popLayout" initial={false}>
-            {isCaptured && (
-              <motion.button
-                key="save"
-                layout
-                className="chunk-btn primary"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={savePhoto}
-              >
-                Save
-              </motion.button>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence mode="popLayout" initial={false}>
-            {isCaptured && (
-              <motion.button
-                key="post-cloud"
-                layout
-                className="chunk-btn"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={postToCloud}
-              >
-                Post to Cloud
-              </motion.button>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence mode="popLayout" initial={false}>
-            {isCaptured && (
-              <motion.button
-                key="clear"
-                layout
-                className="chunk-btn clear-btn"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={clearCapture}
-              >
-                Clear
-              </motion.button>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!isCaptured && (
-              <motion.button
-                key="swap"
-                layout
-                className="icon-btn swap-btn"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                onClick={toggleFacingMode}
-                title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
-              >
-                <FontAwesomeIcon icon={faCameraRotate} style={{ fontSize: 18 }} />
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </LayoutGroup>
+        <button
+          className="icon-btn swap-btn"
+          onClick={toggleFacingMode}
+          title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
+        >
+          <FontAwesomeIcon icon={faCameraRotate} style={{ fontSize: 18 }} />
+        </button>
+      </div>
     </>
   );
 
@@ -1007,7 +924,23 @@ export default function ChladniParticleGhost() {
           flex-shrink: 0;
           padding: 0 24px 24px;
           display: flex; flex-direction: column; justify-content: space-around;
+          position: relative;
         }
+        .controls-inner { display: flex; flex-direction: column; justify-content: space-around; flex: 1 1 0; min-height: 0; }
+        .capture-overlay {
+          position: absolute;
+          inset: 0;
+          padding: 0 24px 24px;
+          display: flex; flex-direction: column; gap: 10px;
+          justify-content: flex-end;
+          pointer-events: none;
+        }
+        .capture-overlay .chunk-btn { flex: none; pointer-events: auto; }
+        .chunk-btn.post-btn { background: #2a2a2a; border-color: rgba(255,255,255,0.15); }
+        .chunk-btn.post-btn:hover { background: #323232; }
+        .chunk-btn.post-btn:active { background: #383838; }
+        .chunk-btn.clear-btn { color: #f0b0a0; border-color: rgba(240,176,160,0.35); background: #1e1312; }
+        .chunk-btn.clear-btn:hover { background: #261816; }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
         #canvas-wrap::after {
           content: ''; position: absolute; inset: 0;
@@ -1073,7 +1006,6 @@ export default function ChladniParticleGhost() {
 
         /* Source area: main action + optional swap/clear + indicators */
         .action-row  { display: flex; align-items: stretch; gap: 10px; width: 100%; }
-        .action-row.captured { flex-direction: column; }
         .chunk-btn {
           display: flex; align-items: center; justify-content: center;
           flex: 1 1 0;
@@ -1103,12 +1035,6 @@ export default function ChladniParticleGhost() {
         }
         .chunk-btn.primary:hover  { background: #d8d0b8; }
         .chunk-btn.primary:active { background: #b8b098; }
-        .clear-btn {
-          color: #f0b0a0;
-          border-color: rgba(240,176,160,0.35);
-          background: rgba(240,120,100,0.06);
-        }
-        .clear-btn:hover { background: rgba(240,120,100,0.12); }
         .icon-btn {
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0;
@@ -1286,7 +1212,49 @@ export default function ChladniParticleGhost() {
           </div>
         </div>
 
-        <div id="controls">{renderControls()}</div>
+        <div id="controls">
+          <motion.div
+            className="controls-inner"
+            animate={{ opacity: isCaptured ? 0.25 : 1 }}
+            transition={{ duration: 0.2 }}
+            style={{ pointerEvents: isCaptured ? 'none' : 'auto' }}
+          >
+            {renderControls()}
+          </motion.div>
+          <AnimatePresence>
+            {isCaptured && (
+              <motion.div
+                className="capture-overlay"
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
+                variants={{
+                  hidden: {},
+                  visible: { transition: { staggerChildren: 0.06, staggerDirection: -1 } },
+                }}
+              >
+                <motion.button
+                  className="chunk-btn primary"
+                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                  onClick={savePhoto}
+                >Save</motion.button>
+                <motion.button
+                  className="chunk-btn post-btn"
+                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                  onClick={postToCloud}
+                >Post to Cloud</motion.button>
+                <motion.button
+                  className="chunk-btn clear-btn"
+                  variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                  onClick={clearCapture}
+                >Clear</motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </>
   );
