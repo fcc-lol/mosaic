@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMicrophone, faMicrophoneSlash, faCameraRotate } from '@fortawesome/free-solid-svg-icons';
+import { faMicrophone, faMicrophoneSlash, faCameraRotate, faCloudArrowUp, faXmark } from '@fortawesome/free-solid-svg-icons';
 
 const INITIAL = {
   m: 3, n: 4, conv: 0.8, sprd: 0.8,
@@ -151,6 +151,8 @@ export default function ChladniParticleGhost() {
   const [micModParams,   setMicModParams]   = useState(new Set());
   const [facingMode,     setFacingMode]     = useState('environment');
   const [isCaptured,     setIsCaptured]     = useState(false);
+  const [layoutReady, setLayoutReady] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setLayoutReady(true), 500); return () => clearTimeout(t); }, []);
   const [mVal,           setMVal]           = useState(INITIAL.m);
   const [nVal,           setNVal]           = useState(INITIAL.n);
   const [convVal,        setConvVal]        = useState(INITIAL.conv);
@@ -281,6 +283,18 @@ export default function ChladniParticleGhost() {
     }
 
     ptX.clearRect(0, 0, W, H);
+
+    // Draw blurry camera bg into particle canvas so export matches preview
+    const bgC = bgCanvasRef.current;
+    if (bgC) {
+      ptX.save();
+      ptX.imageSmoothingEnabled = true;
+      ptX.imageSmoothingQuality = 'high';
+      ptX.globalAlpha = 0.45;
+      const pad = W * 0.05;
+      ptX.drawImage(bgC, -pad, -pad, W + pad * 2, H + pad * 2);
+      ptX.restore();
+    }
 
     // Newton flow toward the nearest nodal line of chladni(x,y,m,n).
     // Each frame is a fresh "drop the sand": every grain restarts at its
@@ -529,10 +543,12 @@ export default function ChladniParticleGhost() {
       st.conv = st.lastEffective.conv;
       st.sprd = st.lastEffective.sprd;
     }
+    st.micModBeforeCapture = { ...st.micMod };
+    st.waveModBeforeCapture = null;
+    setWaveModActive(prev => { st.waveModBeforeCapture = prev; return false; });
     Object.keys(MOD_RANGE).forEach(k => { st.micMod[k] = false; });
     st.captured = true;
     setIsCaptured(true);
-    setWaveModActive(false);
     if (st.patternMode === 'turing') {
       setScaleVal(st.turingScale);
       setWavesVal(st.turingWaves);
@@ -558,15 +574,19 @@ export default function ChladniParticleGhost() {
   }, []);
 
   const clearCapture = useCallback(() => {
-    s.current.captured = false;
+    const st = s.current;
+    st.captured = false;
     setIsCaptured(false);
-    restoreMic();
-  }, [restoreMic]);
+    if (st.waveModBeforeCapture) {
+      Object.assign(st.micMod, st.micModBeforeCapture);
+      setWaveModActive(true);
+    }
+  }, []);
 
-  const savePhoto = useCallback(() => {
+  const getFlattenedBlob = useCallback(() => {
     const pt = ptCanvasRef.current;
-    if (!pt) return;
-    // Particles are now the only layer; flatten onto a black background.
+    if (!pt) return Promise.resolve(null);
+    // bg is already composited into the particle canvas each frame.
     const out = document.createElement('canvas');
     out.width  = pt.width;
     out.height = pt.height;
@@ -574,30 +594,55 @@ export default function ChladniParticleGhost() {
     octx.fillStyle = '#000';
     octx.fillRect(0, 0, out.width, out.height);
     octx.drawImage(pt, 0, 0);
-    out.toBlob(async (blob) => {
-      if (!blob) return;
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const prefix = s.current.patternMode === 'turing' ? 'turing' : 'chladni';
-      const file = new File([blob], `${prefix}-${ts}.png`, { type: 'image/png' });
-      // On iOS/mobile use the native share sheet (includes Save to Photos).
-      // Guard with maxTouchPoints to avoid triggering the sheet on desktop Safari.
-      if (navigator.maxTouchPoints > 1 && navigator.canShare?.({ files: [file] })) {
-        try { await navigator.share({ files: [file] }); return; } catch {}
-      }
-      // Desktop fallback: trigger a download.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, 'image/png');
+    return new Promise((resolve) => out.toBlob(resolve, 'image/jpeg', 0.95));
+  }, []);
+
+  const savePhoto = useCallback(async () => {
+    const blob = await getFlattenedBlob();
+    if (!blob) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const prefix = s.current.patternMode === 'turing' ? 'turing' : 'chladni';
+    const file = new File([blob], `${prefix}-${ts}.jpg`, { type: 'image/jpeg' });
+    if (navigator.maxTouchPoints > 1 && navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch {}
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     s.current.captured = false;
     setIsCaptured(false);
-    restoreMic();
-  }, [restoreMic]);
+    if (s.current.waveModBeforeCapture) {
+      Object.assign(s.current.micMod, s.current.micModBeforeCapture);
+      setWaveModActive(true);
+    }
+  }, [getFlattenedBlob]);
+
+  const cloudApi = window.location.hostname === 'localhost'
+    ? 'http://localhost:3127' : 'https://cloud.leo.gd';
+  const cloudApp = window.location.hostname === 'localhost'
+    ? 'http://localhost:5176' : 'https://cloud.leo.gd';
+
+  const postToCloud = useCallback(async () => {
+    const blob = await getFlattenedBlob();
+    if (!blob) return;
+    const form = new FormData();
+    form.append('image', blob, 'mosaic.jpg');
+    try {
+      const res = await fetch(`${cloudApi}/api/prefill-media`, {
+        method: 'POST',
+        body: form,
+      });
+      const { filename } = await res.json();
+      window.open(`${cloudApp}/?compose=${filename}&source=mosaic`, '_blank');
+    } catch (e) {
+      console.warn('Post to Cloud failed:', e);
+    }
+  }, [getFlattenedBlob]);
 
   // ── microphone ───────────────────────────────────────────────────────────
 
@@ -633,9 +678,9 @@ export default function ChladniParticleGhost() {
   const startCameraAndMic = useCallback(async (facing) => {
     await startCamera(facing || s.current.facingMode || 'environment');
     if (!s.current.micMode) await startMic();
+    // Mic hardware is ready but modulation starts disabled
     Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
-    modKeysForMode().forEach(k => { s.current.micMod[k] = true; });
-    setWaveModActive(true);
+    setWaveModActive(false);
   }, [startCamera, startMic]);
 
   const stopCameraAndMic = useCallback(() => {
@@ -664,14 +709,24 @@ export default function ChladniParticleGhost() {
   const switchPatternMode = useCallback((mode) => {
     s.current.patternMode = mode;
     setPatternMode(mode);
-    // Re-route mic modulation to the new mode's parameters.
-    if (s.current.micMode) {
+    // Re-route mic modulation to the new mode's parameters only if
+    // modulation is currently active (not just mic hardware).
+    setWaveModActive(prev => {
       Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
-      const keys = mode === 'turing'
-        ? ['turingScale', 'turingWaves', 'conv', 'sprd']
-        : ['m', 'n', 'conv', 'sprd'];
-      keys.forEach(k => { s.current.micMod[k] = true; });
-    }
+      if (prev) {
+        const keys = mode === 'turing'
+          ? ['turingScale', 'turingWaves', 'conv', 'sprd']
+          : ['m', 'n', 'conv', 'sprd'];
+        keys.forEach(k => { s.current.micMod[k] = true; });
+      }
+      return prev;
+    });
+  }, []);
+
+  // ── auto-start camera on mount ────────────────────────────────────────────
+
+  useEffect(() => {
+    startCameraAndMic('environment');
   }, []);
 
   // ── cleanup on unmount ───────────────────────────────────────────────────
@@ -788,44 +843,33 @@ export default function ChladniParticleGhost() {
 
       <LayoutGroup>
         <div className="action-row">
-          <AnimatePresence mode="popLayout">
-            {isCaptured && (
+          <AnimatePresence mode="popLayout" initial={false}>
+            {isCaptured ? (
               <motion.button
                 key="clear"
+                layout
                 className="chunk-btn clear-btn"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15, delay: 0.15 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
                 onClick={clearCapture}
               >
                 Clear
               </motion.button>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence mode="popLayout">
-            {isCameraActive && !isCaptured && (
+            ) : (
               <motion.button
                 key="mic"
                 layout
                 className={'icon-btn mic-toggle' + (waveModActive ? ' mic-on active' : '')}
-                disabled={!isMicActive}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
                 onClick={toggleWaveMod}
-                title="Modulate wave params with mic"
-                aria-label="Modulate wave params with mic"
-                variants={{
-                  show: { opacity: 1, transition: { type: 'spring', damping: 26, stiffness: 280 } },
-                  hide: { opacity: 0, transition: { duration: 0.15 } },
-                }}
-                initial="hide"
-                animate="show"
-                exit="hide"
+                disabled={!isMicActive}
               >
-                <FontAwesomeIcon
-                  icon={waveModActive ? faMicrophone : faMicrophoneSlash}
-                  style={{ fontSize: 18 }}
-                />
+                <FontAwesomeIcon icon={waveModActive ? faMicrophone : faMicrophoneSlash} style={{ fontSize: 18 }} />
               </motion.button>
             )}
           </AnimatePresence>
@@ -833,31 +877,37 @@ export default function ChladniParticleGhost() {
           <motion.button
             layout
             className="chunk-btn primary main-action"
-            onClick={
-              !isCameraActive
-                ? () => startCameraAndMic(s.current.facingMode || 'environment')
-                : (isCaptured ? savePhoto : captureImage)
-            }
+            onClick={isCaptured ? savePhoto : captureImage}
             transition={{ type: 'spring', damping: 26, stiffness: 280 }}
           >
-            {!isCameraActive ? 'Start camera' : (isCaptured ? 'Save' : 'Capture')}
+            {isCaptured ? 'Save' : 'Capture'}
           </motion.button>
 
-          <AnimatePresence mode="popLayout">
-            {isCameraActive && !isCaptured && (
+          <AnimatePresence mode="popLayout" initial={false}>
+            {isCaptured ? (
+              <motion.button
+                key="post-cloud"
+                layout
+                className="chunk-btn"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                onClick={postToCloud}
+              >
+                Post to Cloud
+              </motion.button>
+            ) : (
               <motion.button
                 key="swap"
+                layout
                 className="icon-btn swap-btn"
-                variants={{
-                  show: { opacity: 1, transition: { duration: 0.15 } },
-                  hide: { opacity: 0, transition: { duration: 0.15 } },
-                }}
-                initial="hide"
-                animate="show"
-                exit="hide"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 280 }}
                 onClick={toggleFacingMode}
                 title={facingMode === 'user' ? 'Switch to back camera' : 'Switch to front camera'}
-                aria-label="swap camera"
               >
                 <FontAwesomeIcon icon={faCameraRotate} style={{ fontSize: 18 }} />
               </motion.button>
@@ -908,12 +958,12 @@ export default function ChladniParticleGhost() {
         #canvas-area {
           position: relative; flex: 1 1 0; min-height: 0;
           display: flex; align-items: center; justify-content: center;
-          padding: 24px; overflow: hidden;
+          padding: 24px; overflow: visible;
         }
         #canvas-wrap {
           position: relative; border-radius: 16px; overflow: hidden;
-          background: transparent; display: block;
-          border: 1px solid rgba(255,255,255,0.05);
+          background: #000; display: block;
+          border: none;
           aspect-ratio: 1 / 1;
           height: 100%; width: auto;
           max-width: 100%; max-height: 100%;
@@ -925,6 +975,12 @@ export default function ChladniParticleGhost() {
           display: flex; flex-direction: column; justify-content: center;
         }
         #canvas-wrap canvas  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+        #canvas-wrap::after {
+          content: ''; position: absolute; inset: 0;
+          border-radius: 16px;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+          pointer-events: none; z-index: 1;
+        }
         #c-particles { position: relative; }
         .section { padding: 22px 0; border-bottom: 0.5px solid var(--border); }
         .section:first-child { padding-top: 4px; }
