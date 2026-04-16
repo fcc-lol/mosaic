@@ -628,8 +628,11 @@ export default function ChladniParticleGhost() {
     ? 'http://localhost:5176' : 'https://cloud.leo.gd';
 
   const postToCloud = useCallback(async () => {
+    // Open the window immediately to preserve the user gesture context,
+    // then navigate it after the upload completes.
+    const win = window.open('', '_blank');
     const blob = await getFlattenedBlob();
-    if (!blob) return;
+    if (!blob) { if (win) win.close(); return; }
     const form = new FormData();
     form.append('image', blob, 'mosaic.jpg');
     try {
@@ -638,9 +641,12 @@ export default function ChladniParticleGhost() {
         body: form,
       });
       const { filename } = await res.json();
-      window.open(`${cloudApp}/?compose=${filename}&source=mosaic`, '_blank');
+      const url = `${cloudApp}/?compose=${filename}&source=mosaic`;
+      if (win) win.location = url;
+      else window.location = url;
     } catch (e) {
       console.warn('Post to Cloud failed:', e);
+      if (win) win.close();
     }
   }, [getFlattenedBlob]);
 
@@ -677,11 +683,7 @@ export default function ChladniParticleGhost() {
   // indicators mirror the same session.
   const startCameraAndMic = useCallback(async (facing) => {
     await startCamera(facing || s.current.facingMode || 'environment');
-    if (!s.current.micMode) await startMic();
-    // Mic hardware is ready but modulation starts disabled
-    Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
-    setWaveModActive(false);
-  }, [startCamera, startMic]);
+  }, [startCamera]);
 
   const stopCameraAndMic = useCallback(() => {
     stopCamera();
@@ -697,14 +699,15 @@ export default function ChladniParticleGhost() {
     });
   }, []);
 
-  const toggleWaveMod = useCallback(() => {
+  const toggleWaveMod = useCallback(async () => {
+    if (!s.current.micMode) await startMic();
     setWaveModActive(prev => {
       const next = !prev;
       Object.keys(MOD_RANGE).forEach(k => { s.current.micMod[k] = false; });
       if (next) modKeysForMode().forEach(k => { s.current.micMod[k] = true; });
       return next;
     });
-  }, []);
+  }, [startMic]);
 
   const switchPatternMode = useCallback((mode) => {
     s.current.patternMode = mode;
@@ -867,7 +870,6 @@ export default function ChladniParticleGhost() {
                 exit={{ opacity: 0 }}
                 transition={{ type: 'spring', damping: 26, stiffness: 280 }}
                 onClick={toggleWaveMod}
-                disabled={!isMicActive}
               >
                 <FontAwesomeIcon icon={waveModActive ? faMicrophone : faMicrophoneSlash} style={{ fontSize: 18 }} />
               </motion.button>
