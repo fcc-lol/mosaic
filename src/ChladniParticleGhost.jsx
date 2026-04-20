@@ -601,7 +601,8 @@ export default function ChladniParticleGhost() {
         body: form,
       });
       const { filename } = await res.json();
-      const url = `${cloudApp}/?compose=${filename}&source=mosaic`;
+      const pt = ptCanvasRef.current;
+      const url = `${cloudApp}/?compose=${filename}&source=mosaic${pt ? `&width=${pt.width}&height=${pt.height}` : ''}`;
       if (win) win.location = url;
     } catch (e) {
       console.warn('Post to Cloud failed:', e);
