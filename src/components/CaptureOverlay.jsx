@@ -4,14 +4,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChunkButton } from '../styles/shared';
 
 const Overlay = styled(motion.div)`
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 640px;
+  margin: 0 auto;
   padding: 0 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  justify-content: flex-end;
   pointer-events: none;
+  z-index: 10;
 
   ${ChunkButton} {
     flex: none;
