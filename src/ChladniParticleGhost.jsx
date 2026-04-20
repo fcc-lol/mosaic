@@ -587,10 +587,10 @@ export default function ChladniParticleGhost() {
   const cloudApi = window.location.hostname === 'localhost'
     ? 'http://localhost:3127' : 'https://cloud.leo.gd';
   const cloudApp = window.location.hostname === 'localhost'
-    ? 'http://localhost:5176' : 'https://cloud.leo.gd';
+    ? 'http://localhost:5173' : 'https://cloud.leo.gd';
 
   const postToCloud = useCallback(async () => {
-    const win = window.open(cloudApp, '_blank');
+    const win = window.open('about:blank', '_blank');
     const blob = await getFlattenedBlob();
     if (!blob) return;
     const form = new FormData();
